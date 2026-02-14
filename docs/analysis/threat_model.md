@@ -1,6 +1,6 @@
-# Threat Model: Physical IDS Telemetry
+# Threat Model: Kinetic IDS Node Telemetry
 
-This document outlines the security considerations and mitigations for the PIDS telemetry bridge.
+This document outlines the security considerations and mitigations for the kinetic ids node.
 
 ## 1. Adversary Model
 We assume an adversary with physical proximity to the sensor node but no initial access to the internal MQTT network.
