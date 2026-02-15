@@ -19,9 +19,11 @@ brew install openocd
 ```
 
 ```
-openocd -f interface/cmsis-dap.cfg -f target/nrf52.cfg -c "adapter speed 5000; init; halt; nrf52_erase_all; program YOUR_BOOTLOADER.hex verify reset; shutdown"
+openocd -f interface/cmsis-dap.cfg -f target/nrf52.cfg -c "adapter speed 1000; init; halt; nrf5 mass_erase; shutdown"
 ```
 
+```
+openocd -f interface/cmsis-dap.cfg -f target/nrf52.cfg -c "init; halt; program uf2_bootloader-nrf52840_mdk_usb_dongle-0.7.1-s140_6.1.1.hex verify reset; shutdown"
+```
+```
 
-```
-```
