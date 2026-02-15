@@ -4,7 +4,7 @@
 # 🚀 nRF52840 MDK USB Dongle: Build & Flash Notes
 
 
-### 1. Build the Blinky Sample
+## 1. Build from workspace
 Run this from your `ncs-playground` root. Using `-p always` ensures a clean (pristine) build every time.
 ```bash
 # expample load venv
@@ -15,7 +15,7 @@ west build -p always -b nrf52840_mdk_usb_dongle samples/blinky
 ```
 ![alt text](image.png)
 
-2. Convert HEX to UF2
+## 2. Convert HEX to UF2
 Zephyr outputs a .hex file. Your bootloader requires a .uf2 file.
 
 Note: The build artifacts are located in build/zephyr/, not build/blinky/.
@@ -26,4 +26,6 @@ Note: The build artifacts are located in build/zephyr/, not build/blinky/.
 uf2conv build/blinky/zephyr/zephyr.hex -c -f 0xada52840 -o ./zephyr.uf2
 ```
 ![alt text](image-2.png)
+
+
 
