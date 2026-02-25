@@ -35,13 +35,13 @@ title <size:18><color:#7EC8E3><b>L.I.M.A. — System Context</b></color></size>\
 actor "Security\nOperator" as operator #0f3460
 
 package "Local Environment\n[Air-Gapped]" as local {
-    rectangle "<b>LIMA Node</b>\n--\nnRF52840 + MPU6050\nZephyr RTOS\nCryptoCell-310\n<i>Detects integrity events\nSigns + broadcasts BLE</i>" as node #0f3460
-    rectangle "<b>LIMA Gateway</b>\n--\nRaspberry Pi Zero\nMQTT Broker\nBLE-MQTT Bridge\n<i>Event router\nLocal audit log</i>" as gateway #0f3460
+    rectangle "<b>LIMA Node</b>\n--\nnRF52840 + MPU6050\nZephyr RTOS\nCryptoCell-310\n<i>Detects integrity events\nSigns + broadcasts BLE" as node #0f3460
+    rectangle "<b>LIMA Gateway</b>\n--\nRaspberry Pi Zero\nMQTT Broker\nBLE-MQTT Bridge\n<i>Event router\nLocal audit log" as gateway #0f3460
 }
 
-rectangle "<b>Push Notification</b>\n--\nPushover / Pushbullet\n<i>Real-time alerts</i>" as push #1a3a2a
-rectangle "<b>SIEM / Log Aggregator</b>\n--\nSplunk / ELK / Graylog\n<i>Security event correlation</i>" as siem #1a3a2a
-database "<b>Cloud Audit Store</b>\n--\nS3 / Azure Blob\n<i>Immutable audit trail</i>" as cloud #2C0E3F
+rectangle "<b>Push Notification</b>\n--\nPushover / Pushbullet\n<i>Real-time alerts" as push #1a3a2a
+rectangle "<b>SIEM / Log Aggregator</b>\n--\nSplunk / ELK / Graylog\n<i>Security event correlation" as siem #1a3a2a
+database "<b>Cloud Audit Store</b>\n--\nS3 / Azure Blob\n<i>Immutable audit trail" as cloud #2C0E3F
 
 node --> gateway : <color:#7EC8E3>Integrity Events\nBLE 5.0 / Coded PHY\n[Encrypted + Signed]</color>
 gateway --> push : <color:#7EC8E3>Alert\n[HTTPS / API]</color>
