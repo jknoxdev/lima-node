@@ -22,7 +22,7 @@ skinparam {
     ActorBorderColor #7EC8E3
     ActorBackgroundColor #0f3460
     ActorFontColor #FFFFFF
-    DatabaseBorderColor #9B59B6
+    DatabaseBorderColor #561b8d
     DatabaseBackgroundColor #2C0E3F
     DatabaseFontColor #FFFFFF
     NoteBorderColor #27AE60
