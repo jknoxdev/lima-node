@@ -72,19 +72,19 @@ Each fires independently. An attacker must defeat both sensors simultaneously to
 ## Firmware Stack
 
 ```
-┌─────────────────────────────────┐
+┌──────────────────────────────────┐
 │         Application Layer        │
 │  Event Aggregator · State Machine│
-├─────────────────────────────────┤
+├──────────────────────────────────┤
 │         Zephyr RTOS              │
-│  Scheduler · Power Mgmt · DTS   │
-├─────────────────────────────────┤
+│  Scheduler · Power Mgmt · DTS    │
+├──────────────────────────────────┤
 │         Nordic NCS               │
-│  BLE Stack · CryptoCell · HAL   │
-├─────────────────────────────────┤
+│  BLE Stack · CryptoCell · HAL    │
+├──────────────────────────────────┤
 │         nRF52840 Hardware        │
-│  Cortex-M4F · CryptoCell-310    │
-└─────────────────────────────────┘
+│  Cortex-M4F · CryptoCell-310     │
+└──────────────────────────────────┘
 ```
 
 **NCS Version:** v3.2.0-rc1 · **Zephyr:** 4.3.99 · **Board:** `nrf52840_mdk_usb_dongle/nrf52840`
