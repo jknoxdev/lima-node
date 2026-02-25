@@ -62,7 +62,50 @@ This installs ARM GCC, CMake, Ninja, and all build tools automatically.
 
 ---
 
-## 3. Install West + Python Virtual Environment
+## 3.a Install Zephyr SDK (Toolchain)
+
+The Zephyr SDK provides the ARM cross-compiler required to build firmware.
+
+<details>
+<summary>🐧 Linux</summary>
+
+```bash
+cd ~
+wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.8/zephyr-sdk-0.16.8_linux-x86_64.tar.xz
+tar xf zephyr-sdk-0.16.8_linux-x86_64.tar.xz
+cd zephyr-sdk-0.16.8
+./setup.sh
+rm ~/zephyr-sdk-0.16.8_linux-x86_64.tar.xz
+```
+</details>
+
+<details>
+<summary>🍎 macOS</summary>
+
+```bash
+cd ~
+# Apple Silicon:
+wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.8/zephyr-sdk-0.16.8_macos-aarch64.tar.xz
+# Intel / x86 Silicon:
+# wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.8/zephyr-sdk-0.16.8_macos-x86_64.tar.xz
+tar xf zephyr-sdk-0.16.8_macos-*.tar.xz
+cd zephyr-sdk-0.16.8
+./setup.sh
+rm ~/zephyr-sdk-0.16.8_macos-*.tar.xz
+```
+</details>
+
+<details>
+<summary>🪟 Windows</summary>
+
+Download and run the installer from the [Zephyr SDK releases page](https://github.com/zephyrproject-rtos/sdk-ng/releases/tag/v0.16.8) — pick `zephyr-sdk-0.16.8_windows-x86_64.exe`.
+</details>
+
+> ⚠️ Install to `~` or `~/.local` — CMake searches these paths automatically. Installing elsewhere requires setting `ZEPHYR_SDK_INSTALL_DIR` manually.
+
+
+
+## 3.b Install West + Python Virtual Environment
 
 cd into your west root directory. Note, this will be the root for the west virtual installation, and the code repository will be nested within it as so: 
 
