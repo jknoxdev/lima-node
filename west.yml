@@ -4,6 +4,7 @@ manifest:
       url-base: https://github.com/nrfconnect
   projects:
     - name: sdk-nrf
+      path: nrf
       remote: nrfconnect
       revision: v3.2.2 # or latest stable
       import: true # This pulls in Zephyr and all other modules automatically
