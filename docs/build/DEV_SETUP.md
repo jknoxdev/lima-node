@@ -64,10 +64,17 @@ This installs ARM GCC, CMake, Ninja, and all build tools automatically.
 
 ## 3. Install West + Python Virtual Environment
 
+cd into your west root directory. Note, this will be the root for the west virtual installation, and the code repository will be nested within it as so: 
+
+>lima-ws/lima-node
+
 <details>
 <summary>🐧 Linux / 🍎 macOS</summary>
 
 ```bash
+mkdir ~/$normal_repository_dir/lima-ws
+mkdir ~/$normal_repository_dir/lima-ws/$cloned_project
+cd ~/$normal_repository_dir/lima-ws
 python3 -m venv .venv
 source .venv/bin/activate
 pip install west
@@ -78,6 +85,9 @@ pip install west
 <summary>🪟 Windows (PowerShell)</summary>
 
 ```powershell
+mkdir ~/$normal_repository_dir/lima-ws
+mkdir ~/$normal_repository_dir/lima-ws/$cloned_project
+cd ~/$normal_repository_dir/lima-ws
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install west
