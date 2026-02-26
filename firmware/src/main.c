@@ -3,8 +3,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/sensor.h>
 
-
-/* L.I.M.A. Status Blinker: 4.5 Hz*/
+/* L.I.M.A. Status Blinker: 16.67 Hz*/
 #define SLEEP_TIME_MS 60
 #define LED0_NODE DT_ALIAS(led0)
 
@@ -20,10 +19,8 @@ int main(void)
 
     if (!device_is_ready(mpu)) {
         LOG_ERR("MPU6050 not ready!");
-        // printk("MPU6050 NOT READY\n");
         return 0;
     }
-
 
     struct sensor_value accel[3];
     
@@ -41,14 +38,9 @@ int main(void)
             sensor_value_to_double(&accel[0]),
             sensor_value_to_double(&accel[1]),
             sensor_value_to_double(&accel[2]));
-        // //  printf("accel x:%.2f y:%.2f z:%.2f",
-        // //     sensor_value_to_double(&accel[0]),
-        // //     sensor_value_to_double(&accel[1]),
-        // //     sensor_value_to_double(&accel[2]));
+       
         gpio_pin_toggle_dt(&led);
         k_msleep(SLEEP_TIME_MS); // Cooperative sleep allows BT stack to run
-        // LOG_DBG("heartbeat");   
-        // printk(".");
     }
     return 0;
 }
