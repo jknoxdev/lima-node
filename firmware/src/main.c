@@ -268,21 +268,12 @@ static void state_calibrating_enter(void)
     int rc = hw_calibrate();
     if (rc != 0) {
         LOG_ERR("CALIBRATING: sensor error rc=%d -> FAULT", rc);
-        lima_event_t e = {
-            .type                   = LIMA_EVT_SENSOR_FAULT,
-            .timestamp_ms           = k_uptime_get_32(),
-            .data.fault.fault_code  = (uint8_t)rc,
-            .data.fault.retry_count = fsm.fault_retries,
-        };
-        lima_post_event(&e);
+        transition(STATE_FAULT);
         return;
     }
 
-    lima_event_t e = {
-        .type         = LIMA_EVT_BASELINE_READY,
-        .timestamp_ms = k_uptime_get_32(),
-    };
-    lima_post_event(&e);
+    LOG_INF("CALIBRATING: baseline ready -> ARMED");
+    transition(STATE_ARMED);
 }
 
 /*
