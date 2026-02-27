@@ -7,6 +7,8 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-nRF52840-orange?style=flat-square)](https://www.nordicsemi.com/Products/nRF52840)
 [![RTOS](https://img.shields.io/badge/RTOS-Zephyr%20%2F%20NCS-7EC8E3?style=flat-square)](https://developer.nordicsemi.com)
+[![Status](https://img.shields.io/badge/status-WIP-red?style=flat-square)](#roadmap)
+
 
 ---
 
@@ -45,16 +47,22 @@ Each fires independently. An attacker must defeat both sensors simultaneously to
 ### System Context
 ![System Context](docs/architecture/context.png)
 
-### Component Diagram
-![Component Diagram](docs/architecture/component.png)
-
-### Integrity Event Sequence
-![Sequence Diagram](docs/architecture/sequence.png)
-
 ### Node Firmware State Machine
 ![State Machine](docs/architecture/state.png)
 
 > All diagrams are maintained as PlantUML source in [`docs/architecture/`](docs/architecture/) and auto-rendered to SVG + PNG on every push via GitHub Actions.
+--- 
+
+## Bench Prototyping & Logic Validation
+
+> **Current Phase:** Hardware-in-the-Loop (HIL) testing of the core FSM and I2C driver resilience.
+
+![LIMA Bench Validation](docs/media/initial-fsm.gif)
+
+### Validation Goals
+* **Bus Resilience:** Confirmed the I2C recovery sequence (9-clock pulse) restores sensor comms after a simulated bus hang.
+* **State Mapping:** RGB status telemetry correctly reflects transitions from `ARMED` to `EVENT_DETECTED`.
+* **Async Handling:** Verified that high-frequency sensor polling (Prio 6) correctly feeds the FSM dispatch (Prio 5) without blocking.
 
 ---
 
@@ -156,7 +164,7 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 
 ## Roadmap
 
-- [ ] Firmware: IMU + barometric sensor drivers (Zephyr I2C)
+- [X] Firmware: IMU + barometric sensor drivers (Zephyr I2C)
 - [ ] Firmware: Event aggregator with independent OR trigger logic
 - [ ] Firmware: CryptoCell-310 ECDSA-P256 signing & encryption
 - [ ] Firmware: BLE advertisement with signed payload
@@ -182,4 +190,3 @@ Apache 2.0 — see [LICENSE](LICENSE)
 
 ---
 
-*LIMA — because the null documentation era is over.*

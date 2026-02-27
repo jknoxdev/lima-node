@@ -1,31 +1,26 @@
 /*
- * L.I.M.A. — Local Integrity Multi-modal Architecture
- * main.c — Firmware State Machine with MPU6050 sensor integration
+ * ============================================================================
+ * Project: L.I.M.A. (Local Integrity Multi-modal Architecture)
+ * File:    main.c
+ * Author:  Justin Knox
+ * Date:    Feb 2026
  *
- * Implements every state from docs/architecture/state.puml.
- * MPU6050 accel/gyro is live. BMP280, CryptoCell, and BLE are
- * still stubbed — each gets swapped in one at a time.
+ * Description: 
+ * Event-driven FSM for edge integrity monitoring. Uses a decoupled 
+ * thread model to separate high-frequency sensor polling from 
+ * cryptographic signing and BLE transmission states.
  *
- * Thread model:
- *   - fsm_thread    : owns all state transitions (this file)
- *   - sensor_thread : polls IMU, posts events to fsm_msgq
- *
- * Event flow:
- *   sensor_thread reads MPU6050
- *       → lima_event_t posted to fsm_msgq
- *           → fsm_thread wakes, calls state handler
- *               → transitions to next state
+ * Architecture:
+ * ├── #includes & defines     (System & Zephyr RTOS config)
+ * ├── Hardware Globals        (LEDs, MPU6050, Message Queues)
+ * ├── HAL & Stubs             (I2C Recovery, IMU Read, Crypto/BLE stubs)
+ * ├── FSM Engine              (State transitions & Entry/Exit logic)
+ * ├── fsm_dispatch()          (Event-to-State routing)
+ * ├── Thread Functions        (sensor_thread_fn, fsm_thread_fn)
+ * ├── K_THREAD_DEFINE x2      (Static thread allocation)
+ * └── main()                  (Hardware init & Thread resumption)
+ * ============================================================================
  */
-
-//  main.c
-// ├── #includes + defines        (top)
-// ├── hardware globals           (led, mpu, accel)
-// ├── FSM states + handlers      (the big middle section)
-// ├── fsm_dispatch()             
-// ├── sensor_thread_fn()         
-// ├── fsm_thread_fn()            
-// ├── K_THREAD_DEFINE x2         (very bottom)
-// └── main()
 
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread.h>
