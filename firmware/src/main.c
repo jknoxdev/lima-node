@@ -56,7 +56,10 @@ static void state_cooldown_enter(void);
 
 /* ── Board definitions ───────────────────────────────────────────────────── */
 
-#define LED0_NODE DT_ALIAS(led0)
+// #define LED0_NODE DT_ALIAS(led0)
+#define LED_R_NODE DT_ALIAS(led0)
+#define LED_G_NODE DT_ALIAS(led1)
+#define LED_B_NODE DT_ALIAS(led2)
 
 /* ── Configuration ───────────────────────────────────────────────────────── */
 
@@ -72,14 +75,18 @@ static void state_cooldown_enter(void);
 #define SLEEP_INACTIVITY_MS     30000   /* 30s no event → deep sleep               */
 #define MAX_FAULT_RETRIES       3
 
-#define MOTION_THRESHOLD_G      1.09     /* 1.1 good for table top     */
+#define MOTION_THRESHOLD_G      0.80     /* 1.1 good for table top     */
 
 #define FSM_STACK_SIZE    8192  // Double it again
 #define SENSOR_STACK_SIZE 4096  // Double it again
 
 /* ── Hardware globals ────────────────────────────────────────────────────── */
 
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+// static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+static const struct gpio_dt_spec led_r = GPIO_DT_SPEC_GET(LED_R_NODE, gpios);
+static const struct gpio_dt_spec led_g = GPIO_DT_SPEC_GET(LED_G_NODE, gpios);
+static const struct gpio_dt_spec led_b = GPIO_DT_SPEC_GET(LED_B_NODE, gpios);
+
 static const struct device *mpu;
 static struct sensor_value accel[3];
 static struct k_work_delayable cooldown_work;
@@ -93,9 +100,25 @@ K_TIMER_DEFINE(heartbeat_timer, heartbeat_expiry_fn, NULL);
 
 void heartbeat_expiry_fn(struct k_timer *timer_id)
 {
-    static bool led_state = false;
-    led_state = !led_state;
-    gpio_pin_set_dt(&led, led_state);
+    static uint8_t tick = 0;
+    bool led_on = false;
+
+    /* Pattern definition (Total 20 ticks = 2 seconds) 
+     * Tick 0: ON,  Tick 1: OFF
+     * Tick 2: ON,  Tick 3: OFF
+     * Ticks 4-19: OFF (The 'wait' period)
+     */
+    if (tick == 0 || tick == 2) {
+        led_on = true;
+    } else {
+        led_on = false;
+    }
+
+    gpio_pin_set_dt(&led_b, led_on ? 1 : 0);
+
+    /* Increment and wrap every 20 ticks (20 * 100ms = 2 seconds) */
+    tick = (tick + 1) % 20;
+
 }
 
 /* ── Work Queue Callback ─────────────────────────────────────────────────── */
@@ -308,15 +331,15 @@ static void hw_notify_low_battery(void)
 
 /* ── led blink -------------─────────────────────────────────────────────── */
 
-static void led_blink(int times)
-{
-    for (int i = 0; i < times; i++) {
-        gpio_pin_set_dt(&led, 0);   // active low = on
-        k_msleep(100);
-        gpio_pin_set_dt(&led, 1);   // off
-        k_msleep(100);
-    }
-}
+// static void led_blink(int times)
+// {
+//     for (int i = 0; i < times; i++) {
+//         gpio_pin_set_dt(&led, 0);   // active low = on
+//         k_msleep(100);
+//         gpio_pin_set_dt(&led, 1);   // off
+//         k_msleep(100);
+//     }
+// }
 
 static void hw_i2c_bus_recovery(void)
 {
@@ -416,6 +439,11 @@ static void state_boot_enter(void)
 {
     LOG_INF("BOOT: initializing hardware");
 
+    /* White = R + G + B */
+    gpio_pin_set_dt(&led_r, 1);
+    gpio_pin_set_dt(&led_g, 1);
+    gpio_pin_set_dt(&led_b, 1);
+
     k_work_init_delayable(&cooldown_work, cooldown_expiry_cb);
 
     k_msleep(100);
@@ -473,8 +501,13 @@ static void state_armed_enter(void)
 {    
     // led_blink(3);
     LOG_INF("ARMED: Sensors active. Heartbeat started.");
-    /* Blink every 2 seconds (100ms on, then stays off until next cycle) */
-    k_timer_start(&heartbeat_timer, K_MSEC(2000), K_MSEC(2000));
+    gpio_pin_set_dt(&led_r, 0);
+    gpio_pin_set_dt(&led_g, 0);
+
+    // /* Blink every 2 seconds (100ms on, then stays off until next cycle) */
+    // k_timer_start(&heartbeat_timer, K_MSEC(2000), K_MSEC(2000));
+    /* Timer now runs every 100ms to handle the rapid pulse pattern */
+    k_timer_start(&heartbeat_timer, K_MSEC(100), K_MSEC(100));
 
     fsm.armed_since_ms = k_uptime_get_32();
     hw_enable_irqs();
@@ -483,7 +516,11 @@ static void state_armed_enter(void)
 static void state_armed_exit(void)
 {
     k_timer_stop(&heartbeat_timer);
-    gpio_pin_set_dt(&led, 0); // Ensure LED is off when leaving ARMED
+    // gpio_pin_set_dt(&led, 0); // Ensure LED is off when leaving ARMED
+    gpio_pin_set_dt(&led_r, 0);
+    gpio_pin_set_dt(&led_g, 0);
+    gpio_pin_set_dt(&led_b, 0);
+    LOG_DBG("ARMED: Heartbeat stopped.");
 }
 
 static void state_armed_handle(const lima_event_t *evt)
@@ -610,9 +647,21 @@ static void state_deep_sleep_handle(const lima_event_t *evt)
  */
 static void state_event_detected_enter(void)
 {
+    /* Heartbeat timer was stopped by state_armed_exit() automatically */
+    /* Turn LED solid ON to indicate a 'Triggered' state */
+
+    // gpio_pin_set_dt(&led, 1);
+
+    /* Red Alert! */
+    gpio_pin_set_dt(&led_r, 1);
+    gpio_pin_set_dt(&led_g, 0);
+    gpio_pin_set_dt(&led_b, 0);
+
     LOG_INF("EVENT DETECTED: type=%d at t=%u ms",
             fsm.last_event.type,
             fsm.last_event.timestamp_ms);
+
+
 
     hw_sign_event(&fsm.last_event);
 
@@ -917,7 +966,7 @@ static void sensor_thread_fn(void *p1, void *p2, void *p3)
             double magnitude = hw_read_imu();
 
             /* Toggle LED as heartbeat — visible proof the node is alive */
-            gpio_pin_toggle_dt(&led);
+            // gpio_pin_toggle_dt(&led);
 
             if (magnitude > MOTION_THRESHOLD_G) {
                 LOG_INF("MOTION: magnitude=%.2f g (threshold=%.2f)",
@@ -1000,14 +1049,21 @@ int main(void)
     // This prevents a hung sensor from blocking the driver later
     hw_i2c_bus_recovery();
 
-  
+    /* Init RGB Pins */
+    gpio_pin_configure_dt(&led_r, GPIO_OUTPUT_INACTIVE);
+    gpio_pin_configure_dt(&led_g, GPIO_OUTPUT_INACTIVE);
+    gpio_pin_configure_dt(&led_b, GPIO_OUTPUT_INACTIVE);
+
+    // /* Temporary test: Force the LED to stay on regardless of FSM */
+    // gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE); 
+    // gpio_pin_set_dt(&led, 1); // If ACTIVE_LOW is set in DTS, this should light it up.
     
     LOG_INF("L.I.M.A. node firmware starting");
     
     // 3. Increase the wait and ensure USB is stable
     // We wait 6 seconds now to be absolutely sure the host has finished enumeration
     for (int i = 0; i < 6; i++) {
-        led_blink(1);
+        // led_blink(1);
         k_msleep(1000);
         LOG_INF("USB Settle Loop: %d/6", i+1);
     }
