@@ -315,6 +315,30 @@ void fsm_hw_set_led(lima_state_t state)
         gpio_pin_set_dt(&led_r, 1);
         break;
 
+    case STATE_LIGHT_SLEEP:
+        /* 3 quick purple blinks */
+        for (int i = 0; i < 3; i++) {
+            gpio_pin_set_dt(&led_r, 1);
+            gpio_pin_set_dt(&led_b, 1);
+            k_msleep(100);
+            gpio_pin_set_dt(&led_r, 0);
+            gpio_pin_set_dt(&led_b, 0);
+            k_msleep(100);
+        }
+        break;
+        
+    case STATE_DEEP_SLEEP:
+        /* 4 quick purple blinks */
+        for (int i = 0; i < 4; i++) {
+            gpio_pin_set_dt(&led_r, 1);
+            gpio_pin_set_dt(&led_b, 1);
+            k_msleep(100);
+            gpio_pin_set_dt(&led_r, 0);
+            gpio_pin_set_dt(&led_b, 0);
+            k_msleep(100);
+        }
+        break;
+
     default:
         /* Dark for sleep states */
         break;
