@@ -22,3 +22,8 @@ cp build/firmware/zephyr/zephyr.uf2 /media/$USER/UF2BOOT
 ```bash
 screen /dev/ttyACM0
 ```
+
+## search for overlay files
+```bash
+find . -name "*.overlay" 2>/dev/null
+```
