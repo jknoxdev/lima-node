@@ -180,13 +180,21 @@ static int hw_enable_irqs(void)
 
 static int hw_enter_light_sleep(void)
 {
-    LOG_INF("[STUB] light_sleep");
+    LOG_INF("[SLEEP] entering light sleep — heartbeat interval %d ms", 
+            CONFIG_LIMA_LIGHT_SLEEP_HEARTBEAT_MS);
+    // TODO: real PM suspend goes here
+    k_msleep(CONFIG_LIMA_LIGHT_SLEEP_HEARTBEAT_MS);
+    LOG_INF("[SLEEP] light sleep expired — waking");
     return 0;
 }
 
 static int hw_enter_deep_sleep(void)
 {
-    LOG_INF("[STUB] deep_sleep");
+    LOG_INF("[SLEEP] entering deep sleep — interval %d ms",
+            CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS);
+    // TODO: real PM_STATE_SOFT_OFF goes here
+    k_msleep(CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS);
+    LOG_INF("[SLEEP] deep sleep expired — waking");
     return 0;
 }
 

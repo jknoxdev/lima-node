@@ -1,13 +1,15 @@
 &i2c0 {
     status = "okay";
     pinctrl-0 = <&i2c0_default>;
-    pinctrl-names = "default";
+    pinctrl-1 = <&i2c0_sleep>;
+    pinctrl-names = "default","sleep";
     mpu6050@68 {
         compatible = "invensense,mpu6050";
         reg = <0x68>;
         int-gpios = <&gpio0 8 GPIO_ACTIVE_HIGH>;
     };
 };
+
 
 &pinctrl {
     i2c0_default: i2c0_default {
@@ -29,6 +31,13 @@
             low-power-enable;
         };
     };
+    i2c0_sleep: i2c0_sleep {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SCL, 0, 19)>,
+                    <NRF_PSEL(TWIM_SDA, 0, 20)>;
+            low-power-enable;
+        };
+    };
 };
 
 &uart0 {
@@ -38,6 +47,7 @@
     pinctrl-1 = <&uart0_sleep>;
     pinctrl-names = "default", "sleep";
 };
+
 
 / {
     leds {
