@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="741px" preserveAspectRatio="none" style="width:202px;height:741px;background:#1A1A2E;" version="1.1" viewBox="0 0 202 741" width="202px" zoomAndPan="magnify"><defs><filter height="300%" id="fwc3bojsdlmv8" width="300%" x="-1" y="-1"><feGaussianBlur result="blurOut" stdDeviation="2.0"/><feColorMatrix in="blurOut" result="blurOut2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0"/><feOffset dx="4.0" dy="4.0" in="blurOut2" result="blurOut3"/><feBlend in="SourceGraphic" in2="blurOut3" mode="normal"/></filter></defs><g><text fill="#E0E0E0" font-family="Arial" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="188" x="2" y="10.2104">L.I.M.A Node — System Overview</text><rect fill="#0F3460" filter="url(#fwc3bojsdlmv8)" height="50" rx="12.5" ry="12.5" style="stroke: #4A90D9; stroke-width: 1.5;" width="71" x="54.5" y="20.8047"/><line style="stroke: #4A90D9; stroke-width: 1.5;" x1="54.5" x2="125.5" y1="44.7734" y2="44.7734"/><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="51" x="64.5" y="36.9434">Sensors</text><rect fill="#0F3460" filter="url(#fwc3bojsdlmv8)" height="50" rx="12.5" ry="12.5" style="stroke: #4A90D9; stroke-width: 1.5;" width="120" x="30" y="130.8047"/><line style="stroke: #4A90D9; stroke-width: 1.5;" x1="30" x2="150" y1="154.7734" y2="154.7734"/><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="100" x="40" y="146.9434">Event Detection</text><rect fill="#0F3460" filter="url(#fwc3bojsdlmv8)" height="50" rx="12.5" ry="12.5" style="stroke: #4A90D9; stroke-width: 1.5;" width="120" x="30" y="240.8047"/><line style="stroke: #4A90D9; stroke-width: 1.5;" x1="30" x2="150" y1="278.7422" y2="278.7422"/><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="25" x="77.5" y="256.9434">FSM</text><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="100" x="40" y="270.9121">(State Machine)</text><rect fill="#0F3460" filter="url(#fwc3bojsdlmv8)" height="50" rx="12.5" ry="12.5" style="stroke: #4A90D9; stroke-width: 1.5;" width="150" x="15" y="350.8047"/><line style="stroke: #4A90D9; stroke-width: 1.5;" x1="15" x2="165" y1="374.7734" y2="374.7734"/><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="130" x="25" y="366.9434">Signed Event Record</text><rect fill="#0F3460" filter="url(#fwc3bojsdlmv8)" height="50" rx="12.5" ry="12.5" style="stroke: #4A90D9; stroke-width: 1.5;" width="107" x="36.5" y="460.8047"/><line style="stroke: #4A90D9; stroke-width: 1.5;" x1="36.5" x2="143.5" y1="484.7734" y2="484.7734"/><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="87" x="46.5" y="476.9434">BLE Transport</text><rect fill="#0F3460" filter="url(#fwc3bojsdlmv8)" height="50" rx="12.5" ry="12.5" style="stroke: #4A90D9; stroke-width: 1.5;" width="73" x="53.5" y="570.8047"/><line style="stroke: #4A90D9; stroke-width: 1.5;" x1="53.5" x2="126.5" y1="594.7734" y2="594.7734"/><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="53" x="63.5" y="586.9434">Gateway</text><rect fill="#0F3460" filter="url(#fwc3bojsdlmv8)" height="50" rx="12.5" ry="12.5" style="stroke: #4A90D9; stroke-width: 1.5;" width="163" x="8.5" y="680.8047"/><line style="stroke: #4A90D9; stroke-width: 1.5;" x1="8.5" x2="171.5" y1="704.7734" y2="704.7734"/><text fill="#FFFFFF" font-family="Arial" font-size="12" lengthAdjust="spacingAndGlyphs" textLength="143" x="18.5" y="696.9434">MQTT / Storage / Alerts</text><!--MD5=[00c47d83419da13b28b96a35f812419a]
+link sensors to detect--><path d="M90,71.0447 C90,87.1647 90,108.4247 90,125.4947 " fill="none" id="sensors-&gt;detect" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="90,130.6447,94,121.6447,90,125.6447,86,121.6447,90,130.6447" style="stroke: #7EC8E3; stroke-width: 1.0;"/><!--MD5=[033e666c415f0f9888fd917bf2c283c4]
+link detect to fsm--><path d="M90,181.0447 C90,197.1647 90,218.4247 90,235.4947 " fill="none" id="detect-&gt;fsm" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="90,240.6447,94,231.6447,90,235.6447,86,231.6447,90,240.6447" style="stroke: #7EC8E3; stroke-width: 1.0;"/><!--MD5=[92982346a7032b59fe02c8b2fd27ee8b]
+link fsm to packet--><path d="M90,291.0447 C90,307.1647 90,328.4247 90,345.4947 " fill="none" id="fsm-&gt;packet" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="90,350.6447,94,341.6447,90,345.6447,86,341.6447,90,350.6447" style="stroke: #7EC8E3; stroke-width: 1.0;"/><!--MD5=[c94fab87350a3419dc3459b978200fe2]
+link packet to ble--><path d="M90,401.0447 C90,417.1647 90,438.4247 90,455.4947 " fill="none" id="packet-&gt;ble" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="90,460.6447,94,451.6447,90,455.6447,86,451.6447,90,460.6447" style="stroke: #7EC8E3; stroke-width: 1.0;"/><!--MD5=[ca2ba856fbd59c09273a1f064e76d17a]
+link ble to gw--><path d="M90,511.0447 C90,527.1647 90,548.4247 90,565.4947 " fill="none" id="ble-&gt;gw" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="90,570.6447,94,561.6447,90,565.6447,86,561.6447,90,570.6447" style="stroke: #7EC8E3; stroke-width: 1.0;"/><!--MD5=[56aadb34960afad9c27f2cd752a6a214]
+link gw to backend--><path d="M90,621.0447 C90,637.1647 90,658.4247 90,675.4947 " fill="none" id="gw-&gt;backend" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="90,680.6447,94,671.6447,90,675.6447,86,671.6447,90,680.6447" style="stroke: #7EC8E3; stroke-width: 1.0;"/><!--MD5=[fbf654308044ff886633a06f833f5a3d]
+@startuml overview
+!pragma layout smetana
+
+skinparam {
+    BackgroundColor #1a1a2e
+    ArrowColor #7EC8E3
+    ArrowFontColor #CCCCCC
+    ArrowFontSize 10
+    DefaultFontName Arial
+    DefaultFontColor #E0E0E0
+    DefaultFontSize 11
+    StateBorderColor #4A90D9
+    StateBorderThickness 2
+    StateBackgroundColor #0f3460
+    StateFontColor #FFFFFF
+    StateFontSize 12
+}
+
+title L.I.M.A Node — System Overview
+
+
+state "Sensors" as sensors
+state "Event Detection" as detect
+state "FSM\n(State Machine)" as fsm
+state "Signed Event Record" as packet
+state "BLE Transport" as ble
+state "Gateway" as gw
+state "MQTT / Storage / Alerts" as backend
+
+sensors - -> detect
+detect - -> fsm
+fsm - -> packet
+packet - -> ble
+ble - -> gw
+gw - -> backend
+
+@enduml
+
+PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Java Version: 17.0.18+8
+Operating System: Linux
+Default Encoding: UTF-8
+Language: en
+Country: null
+--></g></svg>
