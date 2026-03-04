@@ -8,15 +8,25 @@
 [![Platform](https://img.shields.io/badge/platform-nRF52840-orange?style=flat-square)](https://www.nordicsemi.com/Products/nRF52840)
 [![RTOS](https://img.shields.io/badge/RTOS-Zephyr%20%2F%20NCS-7EC8E3?style=flat-square)](https://developer.nordicsemi.com)
 [![Status](https://img.shields.io/badge/status-WIP-red?style=flat-square)](#roadmap)
+![Last Commit](https://img.shields.io/github/last-commit/jknoxdev/lima-node)
 
-
+> ⚠️ **Work in Progress**
+>
+> L.I.M.A Node is under active development. The current phase focuses on
+> stabilizing the firmware state machine before integrating sensors,
+> cryptographic packet signing, and radio transport.
 ---
+
+
 
 ## What is LIMA?
 
 LIMA nodes are small, battery-powered sensors that detect physical integrity events — door opens, enclosure breaches, vehicle towing, cabinet punctures — and deliver cryptographically signed alerts to a local gateway, which routes them to operators via push notification, SIEM, or cloud audit trail.
 
 The system is designed to be **air-gapped first**. No cloud dependency for core operation. No persistent BLE connections. No trusted local network required. Just a node, a gateway, and a signed audit trail that survives internet outages.
+
+## System Overview
+
 
 **Two independent threat models, one pipeline:**
 
@@ -101,7 +111,7 @@ Each fires independently. An attacker must defeat both sensors simultaneously to
 
 ## Getting Started
 
-See [`docs/FLASHING.md`](docs/build/FLASHING.md) for the complete build and flash guide.
+See [`docs/build/FLASHING.md`](docs/build/FLASHING.md) for the complete build and flash guide.
 
 ```bash
 # 1. Initialize workspace

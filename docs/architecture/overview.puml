@@ -1,0 +1,37 @@
+@startuml overview
+!pragma layout smetana
+
+skinparam {
+    BackgroundColor #1a1a2e
+    ArrowColor #7EC8E3
+    ArrowFontColor #CCCCCC
+    ArrowFontSize 10
+    DefaultFontName Arial
+    DefaultFontColor #E0E0E0
+    DefaultFontSize 11
+    StateBorderColor #4A90D9
+    StateBorderThickness 2
+    StateBackgroundColor #0f3460
+    StateFontColor #FFFFFF
+    StateFontSize 12
+}
+
+title L.I.M.A Node — System Overview
+
+
+state "Sensors" as sensors
+state "Event Detection" as detect
+state "FSM\n(State Machine)" as fsm
+state "Signed Event Record" as packet
+state "BLE Transport" as ble
+state "Gateway" as gw
+state "MQTT / Storage / Alerts" as backend
+
+sensors --> detect
+detect --> fsm
+fsm --> packet
+packet --> ble
+ble --> gw
+gw --> backend
+
+@enduml
