@@ -188,11 +188,9 @@ static int hw_enter_light_sleep(void)
 
 static int hw_enter_deep_sleep(void)
 {
-    LOG_INF("[SLEEP] entering deep sleep — interval %d ms",
-            CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS);
+    LOG_INF("[SLEEP] deep sleep active — waiting for RTC wakeup event");
     // TODO: real PM_STATE_SOFT_OFF goes here
-    k_msleep(CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS);
-    LOG_INF("[SLEEP] deep sleep expired — waking");
+    // Duration owned by RTC wakeup timer (future) or manual wakeup event
     return 0;
 }
 

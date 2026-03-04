@@ -12,17 +12,17 @@ config LIMA_FSM_LOG_LEVEL
     default 3
     range 0 4
 
-config LIMA_LIGHT_SLEEP_HEARTBEAT_MS
-    int "Light sleep heartbeat interval (ms)"
-    default 10000
+# config LIMA_LIGHT_SLEEP_HEARTBEAT_MS
+#     int "Light sleep heartbeat interval (ms)"
+#     default 10000
 
-config LIMA_DEEP_SLEEP_INTERVAL_MS
-    int "Deep sleep wakeup interval (ms)"
-    default 45000
+# config LIMA_DEEP_SLEEP_INTERVAL_MS
+#     int "Deep sleep wakeup interval (ms)"
+#     default 45000
 
-config LIMA_INACTIVITY_TIMEOUT_MS
-    int "Inactivity timeout before deep sleep (ms)"
-    default 30000
-    help
-      Total time (in ms) the device remains idle (including Light Sleep intervals) 
-      before transitioning to Deep Sleep.
+# config LIMA_INACTIVITY_TIMEOUT_MS
+#     int "Inactivity timeout before deep sleep (ms)"
+#     default 30000
+#     help
+#       Total time (in ms) the device remains idle (including Light Sleep intervals) 
+#       before transitioning to Deep Sleep.
