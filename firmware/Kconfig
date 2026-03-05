@@ -20,6 +20,10 @@ config LIMA_DEEP_SLEEP_INTERVAL_MS
     int "Deep sleep wakeup interval (ms)"
     default 45000
 
+config LIMA_BARO_THRESHOLD_PA
+    int "Barometric pressure breach threshold in Pascals"
+    default 200
+    
 # config LIMA_INACTIVITY_TIMEOUT_MS
 #     int "Inactivity timeout before deep sleep (ms)"
 #     default 30000

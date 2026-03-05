@@ -67,6 +67,8 @@ static struct sensor_value accel[3];
 
 /* baro sensor */
 static const struct device *bme;
+static struct sensor_value baro_press;
+static float baro_baseline_hpa = 0.0f;
 
 /* Sleep LED state */
 static struct k_work_delayable sleep_led_work;
@@ -155,7 +157,7 @@ static int hw_init_sensors(void)
     LOG_INF("MPU6050 ready");
 
     bme = DEVICE_DT_GET_ANY(bosch_bme280);
-    
+
     if (bme == NULL) {
         LOG_ERR("BME280 device not found in devicetree!");
         return -ENODEV;
@@ -183,6 +185,25 @@ static double hw_read_imu(void)
 
     LOG_DBG("Raw: %.2f m/s2 | Motion: %.2f G", mag_ms2, motion_g);
     return motion_g;
+}
+
+static float hw_read_baro(void)
+{
+    sensor_sample_fetch(bme);
+    sensor_channel_get(bme, SENSOR_CHAN_PRESS, &baro_press);
+
+    float abs_hpa = (float)sensor_value_to_double(&baro_press);
+
+    /* First reading sets the baseline */
+    if (baro_baseline_hpa == 0.0f) {
+        baro_baseline_hpa = abs_hpa;
+        LOG_INF("BARO: baseline set to %.2f hPa", (double)abs_hpa);
+        return 0.0f;
+    }
+
+    float delta_pa = (abs_hpa - baro_baseline_hpa) * 100.0f;
+    LOG_DBG("BARO: %.2f hPa | delta %.2f Pa", (double)abs_hpa, (double)delta_pa);
+    return delta_pa;
 }
 
 static void hw_i2c_bus_recovery(void)
@@ -398,10 +419,8 @@ static void sensor_thread_fn(void *p1, void *p2, void *p3)
         LOG_DBG("Sensor thread: gathering FSM state...");
         if (s == STATE_ARMED || s == STATE_LIGHT_SLEEP) {
             double magnitude = hw_read_imu();
-
             if (magnitude > MOTION_THRESHOLD_G) {
                 LOG_INF("MOTION: %.2f g (threshold=%.2f)", magnitude, MOTION_THRESHOLD_G);
-
                 lima_event_t e = {
                     .type              = LIMA_EVT_MOTION_DETECTED,
                     .timestamp_ms      = k_uptime_get_32(),
@@ -416,6 +435,17 @@ static void sensor_thread_fn(void *p1, void *p2, void *p3)
                     .timestamp_ms = k_uptime_get_32(),
                 };
                 lima_post_event(&tick);
+            }
+            float delta_pa = hw_read_baro();
+            if (fabsf(delta_pa) > CONFIG_LIMA_BARO_THRESHOLD_PA) {
+                LOG_INF("BARO: delta=%.2f Pa (threshold=%d)", (double)delta_pa, CONFIG_LIMA_BARO_THRESHOLD_PA);
+                lima_event_t e = {
+                    .type                = LIMA_EVT_PRESSURE_BREACH,
+                    .timestamp_ms        = k_uptime_get_32(),
+                    .data.baro.delta_pa  = delta_pa,
+                    .data.baro.abs_hpa   = baro_baseline_hpa + (delta_pa / 100.0f),
+                };
+                lima_post_event(&e);
             }
         }
         k_msleep(POLL_INTERVAL_MS);
