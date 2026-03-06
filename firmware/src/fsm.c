@@ -333,6 +333,9 @@ static void state_deep_sleep_handle(const lima_event_t *evt)
         transition(STATE_LOW_BATTERY);
         break;
 
+    case LIMA_EVT_POLL_TICK: 
+        break;
+    
     default:
         LOG_WRN("DEEP_SLEEP: unhandled event 0x%02X", evt->type);
         break;
