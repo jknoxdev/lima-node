@@ -4,6 +4,7 @@
 #include <zephyr/kernel.h>
 #include <stdbool.h>
 #include "events.h"
+#include "crypto.h"
 
 #define SLEEP_INACTIVITY_MS     8000   /* 30s no event → deep sleep               */
 #define TX_TIMEOUT_MS           1500     /* tune later */
@@ -30,6 +31,7 @@ typedef enum {
 /* Holds all mutable FSM state. Defined in fsm.c, declared extern here. */
 typedef struct {
     lima_event_t    last_event;         /* Latched trigger event */
+    lima_payload_t  last_payload;       /* Payload built during SIGNING  */
     uint32_t        armed_since_ms;     /* k_uptime when we entered ARMED */
     uint32_t        cooldown_ms;        /* Configurable cooldown duration */
     uint8_t         fault_retries;      /* Retry counter for FAULT recovery */

@@ -515,7 +515,7 @@ int main(void)
     gpio_pin_configure_dt(&led_b, GPIO_OUTPUT_INACTIVE);
 
     hw_i2c_bus_recovery();
-
+    k_msleep(50); 
     if (hw_init_sensors() != 0) {
         LOG_ERR("Sensor init failed!");
         // post SENSOR_FAULT event or spin
@@ -529,9 +529,16 @@ int main(void)
     k_work_init_delayable(&sleep_led_work, sleep_led_expiry_fn);
     k_work_init_delayable(&rtc_wakeup_work, rtc_wakeup_expiry_fn);
 
+
     if (lima_crypto_init() != 0) {
         LOG_ERR("Crypto init failed — signing unavailable");
     }
+    
+    bt_enable();
+    if (lima_ble_init() != 0) {
+        LOG_ERR("BLE init failed — transmitting unavailable");
+    }
+
 
     LOG_INF("Starting LIMA threads...");
     k_thread_resume(fsm_thread);

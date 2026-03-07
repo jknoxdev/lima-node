@@ -28,3 +28,12 @@ config LIMA_BARO_THRESHOLD_PA
 config LIMA_CRYPTO_KEY_ID
     hex "PSA persistent key slot ID for LIMA signing key"
     default 0x00000001
+
+config LIMA_BLE_LOG_LEVEL
+    int "LIMA BLE log level"
+    default 3
+    range 0 4
+
+config LIMA_BLE_ADV_DURATION_MS
+    int "BLE advertisement duration (ms)"
+    default 500

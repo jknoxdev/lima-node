@@ -392,10 +392,12 @@ static void state_signing_enter(void)
 {
     LOG_INF("SIGNING: building payload and signing...");
 
-    lima_payload_t payload;
-    lima_crypto_build_payload(&payload, &fsm.last_event);
+    // lima_payload_t payload;
+    // lima_crypto_build_payload(&payload, &fsm.last_event);
+    lima_crypto_build_payload(&fsm.last_payload, &fsm.last_event);  // ← was local
 
-    int rc = lima_crypto_sign_async(&payload, signing_complete_cb);
+    // int rc = lima_crypto_sign_async(&payload, signing_complete_cb);
+    int rc = lima_crypto_sign_async(&fsm.last_payload, signing_complete_cb);
     if (rc != 0) {
         LOG_ERR("EVENT_DETECTED: failed to start signing (%d) -> FAULT", rc);
         transition(STATE_FAULT);
