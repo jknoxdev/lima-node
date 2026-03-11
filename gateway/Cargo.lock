@@ -594,6 +594,7 @@ dependencies = [
  "crossterm",
  "hex",
  "lima-types",
+ "p256",
  "ratatui",
  "rusqlite",
  "serde",
