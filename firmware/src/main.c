@@ -188,6 +188,8 @@ static int hw_init_sensors(void)
 
 static double hw_read_imu(void)
 {
+    if (mpu == NULL) return -1.0;
+
     int ret = sensor_sample_fetch(mpu);
     if (ret < 0) {
         // LOG_WRN("MPU6050: fetch failed (%d)", ret);
@@ -218,6 +220,8 @@ static double hw_read_imu(void)
 
 static float hw_read_baro(void)
 {
+    if (bme == NULL) return 0.0f;
+
     int ret = sensor_sample_fetch(bme);
     if (ret < 0) {
         LOG_WRN("BME280: fetch failed (%d), attempting bus recovery", ret);
