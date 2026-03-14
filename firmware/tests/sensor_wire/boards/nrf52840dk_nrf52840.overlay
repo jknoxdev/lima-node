@@ -1,0 +1,41 @@
+&i2c0 {
+    compatible = "nordic,nrf-twim";
+    /delete-property/ zephyr,pm-device-runtime-auto;
+    status = "okay";
+    pinctrl-0 = <&i2c0_default>;
+    pinctrl-1 = <&i2c0_sleep>;
+    pinctrl-names = "default", "sleep";
+    clock-frequency = <I2C_BITRATE_STANDARD>;
+
+    mpu6050: mpu6050@68 {
+        compatible = "invensense,mpu6050";
+        reg = <0x68>;
+        status = "okay";
+        accel-fs = <2>;
+        gyro-fs = <250>;
+        smplrt-div = <0>;
+    };
+
+    bme280: bme280@76 {
+        compatible = "bosch,bme280";
+        reg = <0x76>;
+        status = "okay";
+    };
+};
+
+&pinctrl {
+    i2c0_default: i2c0_default {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 5)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 4)>;
+            bias-pull-up;
+        };
+    };
+    i2c0_sleep: i2c0_sleep {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 5)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 4)>;
+            low-power-enable;
+        };
+    };
+};

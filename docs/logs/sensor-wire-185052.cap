@@ -1,0 +1,62 @@
+D: ID OK (BMP280)
+D: "bme280@76" OK
+D: MPU6050/MPU9250/MPU6880 detected
+*** Booting nRF Connect SDK v3.2.2-74845e169be2 ***
+*** Using Zephyr OS v4.2.99-fe4f0106803e ***
+Running TESTSUITE sensor_wire
+===================================================================
+irq 4 enabled
+i2c0 ready: 1
+twi irq: 3
+twi irq: 4
+manual transfer rc=0 val=0x68 (expect 0x68)
+=== RAW I2C PROBE ===
+MPU6050 WHO_AM_I: rc=0 val=0x68 (expect 0x68)
+BME280  chip_id:  rc=0 val=0x58 (expect 0x60)
+=== END PROBE ===
+START - test_bme280_fetch
+ PASS - test_bme280_fetch in 0.002 seconds
+===================================================================
+START - test_bme280_pressure_range
+ PASS - test_bme280_pressure_range in 0.002 seconds
+===================================================================
+START - test_bme280_read_stability
+ PASS - test_bme280_read_stability in 0.618 seconds
+===================================================================
+START - test_bme280_ready
+ PASS - test_bme280_ready in 0.001 seconds
+===================================================================
+START - test_bme280_temperature_range
+ PASS - test_bme280_temperature_range in 0.002 seconds
+===================================================================
+START - test_mpu6050_accel_range
+ PASS - test_mpu6050_accel_range in 0.002 seconds
+===================================================================
+START - test_mpu6050_fetch
+ PASS - test_mpu6050_fetch in 0.002 seconds
+===================================================================
+START - test_mpu6050_read_stability
+ PASS - test_mpu6050_read_stability in 0.619 seconds
+===================================================================
+START - test_mpu6050_ready
+ PASS - test_mpu6050_ready in 0.001 seconds
+===================================================================
+TESTSUITE sensor_wire succeeded
+
+------ TESTSUITE SUMMARY START ------
+
+SUITE PASS - 100.00% [sensor_wire]: pass = 9, fail = 0, skip = 0, total = 9 duration = 1.249 seconds
+ - PASS - [sensor_wire.test_bme280_fetch] duration = 0.002 seconds
+ - PASS - [sensor_wire.test_bme280_pressure_range] duration = 0.002 seconds
+ - PASS - [sensor_wire.test_bme280_read_stability] duration = 0.618 seconds
+ - PASS - [sensor_wire.test_bme280_ready] duration = 0.001 seconds
+ - PASS - [sensor_wire.test_bme280_temperature_range] duration = 0.002 seconds
+ - PASS - [sensor_wire.test_mpu6050_accel_range] duration = 0.002 seconds
+ - PASS - [sensor_wire.test_mpu6050_fetch] duration = 0.002 seconds
+ - PASS - [sensor_wire.test_mpu6050_read_stability] duration = 0.619 seconds
+ - PASS - [sensor_wire.test_mpu6050_ready] duration = 0.001 seconds
+
+------ TESTSUITE SUMMARY END ------
+
+===================================================================
+PROJECT EXECUTION SUCCESSFUL

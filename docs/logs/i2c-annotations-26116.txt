@@ -1,0 +1,19 @@
+8813903-8813973 I²C: Address/Data: Address write: 76
+8813879-8813879 I²C: Address/Data: Start
+8813973-8813983 I²C: Address/Data: Write
+8813983-8813993 I²C: Address/Data: ACK
+8814003-8814082 I²C: Address/Data: Data write: D0
+8814082-8814092 I²C: Address/Data: ACK
+9486531-9486531 I²C: Address/Data: Start repeat
+9486556-9486625 I²C: Address/Data: Address write: 68
+9486625-9486634 I²C: Address/Data: Write
+9486635-9486644 I²C: Address/Data: ACK
+9486655-9486735 I²C: Address/Data: Data write: 75
+9486735-9486745 I²C: Address/Data: ACK
+9513475-9513475 I²C: Address/Data: Start repeat
+9513500-9513570 I²C: Address/Data: Address write: 68
+9513570-9513580 I²C: Address/Data: Write
+9513580-9513590 I²C: Address/Data: ACK
+9513599-9513679 I²C: Address/Data: Data write: 75
+9513679-9513689 I²C: Address/Data: ACK
+10019717-10019717 I²C: Address/Data: Start repeat
