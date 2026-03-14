@@ -1,0 +1,12 @@
+diff --git a/drivers/i2c/i2c_nrfx_twim.c b/drivers/i2c/i2c_nrfx_twim.c
+index 8eee1949bdf..be8a494b7b8 100644
+--- a/drivers/i2c/i2c_nrfx_twim.c
++++ b/drivers/i2c/i2c_nrfx_twim.c
+@@ -92,7 +92,6 @@ static int i2c_nrfx_twim_transfer(const struct device *dev,
+ 		 */
+ 		bool concat_next = ((i + 1) < num_msgs)
+ 				&& !(msgs[i].flags & I2C_MSG_STOP)
+-				&& !(msgs[i + 1].flags & I2C_MSG_RESTART)
+ 				&& ((msgs[i].flags & I2C_MSG_READ)
+ 				    == (msgs[i + 1].flags & I2C_MSG_READ));
+ 

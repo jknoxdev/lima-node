@@ -24,10 +24,10 @@
 
 ## I2C Address
 
-| AD0 | Address |
-|---|---|
-| GND (default) | `0x68` |
-| 3.3V | `0x69` |
+| AD0           | Address |
+| ---------------| ---------|
+| GND (default) | `0x68`  |
+| 3.3V          | `0x69`  |
 
 ---
 
