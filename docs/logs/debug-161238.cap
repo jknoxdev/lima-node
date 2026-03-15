@@ -1,0 +1,151 @@
+97,448] <err> lima_fsm: inactivity_work FIRED at 24697 ms
+[00:00:24.697,479] <inf> lima_fsm: INACTIVI*** Booting nRF Connect SDK v3.2.2-74845e169be2 ***
+*** Using Zephyr OS v4.2.99-fe4f0106803e ***
+[00:00:00.113,128] <inf> fs_nvs: GC Done marker found
+[00:00:00.200,225] <inf> fs_nvs: 2 Sectors of 4096 bytes
+[00:00:00.200,225] <inf> fs_nvs: alloc wra: 1, fd0
+[00:00:00.200,225] <inf> fs_nvs: data wra: 1, 70
+[00:00:00.200,286] <inf> lima_main: L.I.M.A. node firmware starting
+[00:00:00.200,286] <inf> lima_main: L.I.M.A.: suspending threads...
+[00:00:00.200,317] <inf> lima_main: BOOT: I2C bus recovery on P0.4/P0.5
+[00:00:00.200,500] <inf> lima_main: BOOT: I2C recovery complete
+[00:00:00.250,610] <inf> lima_main: MPU6050 ready
+[00:00:00.250,610] <inf> lima_main: BME280 ready
+[00:00:00.250,640] <inf> lima_main: USB settle: 1/6 - start sleep
+[00:00:01.250,732] <inf> lima_main: USB settle: 1/6 - done
+[00:00:01.250,762] <inf> lima_main: USB settle: 2/6 - start sleep
+[00:00:02.250,885] <inf> lima_main: USB settle: 2/6 - done
+[00:00:02.250,885] <inf> lima_main: USB settle: 3/6 - start sleep
+[00:00:03.250,976] <inf> lima_main: USB settle: 3/6 - done
+[00:00:03.251,007] <inf> lima_main: USB settle: 4/6 - start sleep
+[00:00:04.251,129] <inf> lima_main: USB settle: 4/6 - done
+[00:00:04.251,129] <inf> lima_main: USB settle: 5/6 - start sleep
+[00:00:05.251,220] <inf> lima_main: USB settle: 5/6 - done
+[00:00:05.251,251] <inf> lima_main: USB settle: 6/6 - start sleep
+[00:00:06.251,373] <inf> lima_main: USB settle: 6/6 - done
+[00:00:06.253,692] <inf> lima_crypto: CRYPTO: existing key found at slot 0x00000001
+[00:00:06.276,947] <inf> lima_crypto: CRYPTO: public key (65 bytes):
+[00:00:06.276,947] <inf> lima_crypto:   pubkey:
+                                      04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d |...}.M.. ....n...
+                                      b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 |...e.Pii ...y....
+                                      3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 |>B..f... .b..$.M.
+                                      e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f |..,z.... H..[Y.H.
+                                      d7                                               |.                
+[00:00:06.276,977] <inf> lima_crypto: CRYPTO: initialized â ECDSA-P256/SHA-256 ready (key_id=0x00000001)
+[00:00:06.277,099] <inf> bt_sdc_hci_driver: SoftDevice Controller build revision: 
+                                            90 3d 6a f1 a5 ad 64 1d  cd 27 3e bf fc 68 0f 40 |.=j...d. .'>..h.@
+                                            40 99 ca ac                                      |@...             
+[00:00:06.279,327] <inf> bt_hci_core: HW Platform: Nordic Semiconductor (0x0002)
+[00:00:06.279,357] <inf> bt_hci_core: HW Variant: nRF52x (0x0002)
+[00:00:06.279,388] <inf> bt_hci_core: Firmware: Standard Bluetooth controller (0x00) Version 144.27197 Build 1689101809
+[00:00:06.280,242] <inf> bt_hci_core: HCI transport: SDC
+[00:00:06.280,364] <inf> bt_hci_core: Identity: E3:79:63:12:EF:B1 (random)
+[00:00:06.280,426] <inf> bt_hci_core: HCI: version 6.2 (0x10) revision 0x105e, manufacturer 0x0059
+[00:00:06.280,456] <inf> bt_hci_core: LMP: version 6.2 (0x10) subver 0x105e
+[00:00:06.280,944] <inf> lima_ble: BLE: initialized â LIMA_NODE_01 ready to advertise (ext ADV)
+[00:00:06.280,975] <inf> lima_main: Starting LIMA threads...
+[00:00:06.281,005] <inf> lima_main: FSM thread started
+[00:00:06.281,036] <inf> lima_fsm: FSM: Initializing work items
+[00:00:06.281,066] <inf> lima_fsm: BOOT: entered
+[00:00:06.281,127] <inf> lima_fsm: FSM: Initialized in BOOT
+[00:00:06.281,158] <inf> lima_fsm: FSM: BOOT -> CALIBRATING
+[00:00:06.281,188] <inf> lima_fsm: CALIBRATING: warming up sensors
+[00:00:06.281,219] <inf> lima_fsm: FSM: CALIBRATING -> ARMED
+[00:00:06.281,250] <inf> lima_fsm: ARMED: sensors active, heartbeat started
+[00:00:06.281,311] <inf> lima_main: Sensor thread started... sleeping 500ms for FSM boot & calibration...
+[00:00:06.781,433] <inf> lima_main: Sensor thread: 500ms expired...
+[00:00:06.799,560] <inf> lima_main: BARO: baseline set to 97.74 hPa
+[00:00:08.897,064] <inf> lima_fsm: FSM: EVENT_DETECTED -> SIGNING
+--- 3 messages dropped ---
+[00:00:08.897,094] <inf> lima_fsm: SIGNING: building payload and signing...
+[00:00:08.897,094] <inf> lima_crypto: CRYPTO: payload built â node=DE:AD:BE:EF:00:01 seq=1 evt=0x02 accel=1.74 delta_pa=0.00
+[00:00:08.897,125] <inf> lima_crypto:   payload:
+                                      de ad be ef 00 01 02 00  01 00 00 00 c0 22 00 00 |........ ....."..
+                                      a9 be de 3f 00 00 00 00                          |...?....         
+[00:00:08.925,659] <inf> lima_crypto: CRYPTO: signed 64 bytes â sig[0..3]=8E06B816
+[00:00:08.925,659] <inf> lima_crypto: CRYPTO: full signature (64 bytes):
+[00:00:08.925,689] <inf> lima_crypto:   sig:
+                                      8e 06 b8 16 10 43 03 02  c9 35 7e 8d 12 a4 6a 1f |.....C.. .5~...j.
+                                      8f 2b e2 b1 a9 d3 8d 40  b4 95 02 66 40 32 4f 12 |.+.....@ ...f@2O.
+                                      00 98 a9 4d f7 02 de 2a  d4 75 a9 dd df a8 08 be |...M...* .u......
+                                      98 41 8c c8 3e 03 18 de  46 2d 16 54 52 71 b3 2a |.A..>... F-.TRq.*
+[00:00:08.925,720] <inf> lima_crypto: CRYPTO: signed payload (24 bytes):
+[00:00:08.925,750] <inf> lima_crypto:   payload:
+                                      de ad be ef 00 01 02 00  01 00 00 00 c0 22 00 00 |........ ....."..
+                                      a9 be de 3f 00 00 00 00                          |...?....         
+[00:00:08.925,750] <inf> lima_fsm: SIGNING: sig[0..7]=8E06B81610430302 stored (64 bytes)
+[00:00:08.925,781] <inf> lima_fsm:   fsm.last_sig:
+                                   8e 06 b8 16 10 43 03 02  c9 35 7e 8d 12 a4 6a 1f |.....C.. .5~...j.
+                                   8f 2b e2 b1 a9 d3 8d 40  b4 95 02 66 40 32 4f 12 |.+.....@ ...f@2O.
+                                   00 98 a9 4d f7 02 de 2a  d4 75 a9 dd df a8 08 be |...M...* .u......
+                                   98 41 8c c8 3e 03 18 de  46 2d 16 54 52 71 b3 2a |.A..>... F-.TRq.*
+[00:00:08.925,811] <inf> lima_fsm: SIGNING: payload ready -> TRANSMITTING
+[00:00:08.925,842] <inf> lima_fsm: FSM: SIGNING -> TRANSMITTING
+[00:00:08.925,872] <inf> lima_fsm: TRANSMITTING: advertising signed payload via BLE
+[00:00:08.925,903] <inf> lima_ble: BLE: advertising â€” node=DE:AD:BE:EF:00:01 evt=0x02 seq=1 accel=1.74 delta_pa=0.00 sig[0..3]=8E06B816
+[00:00:08.925,964] <inf> lima_ble:   adv_payload:
+                                   ff ff 02 02 01 00 00 00  c0 22 00 00 a9 be de 3f |........ .".....?
+                                   00 00 00 00 de ad be ef  00 01 8e 06 b8 16 10 43 |........ .......C
+                                   03 02 c9 35 7e 8d 12 a4  6a 1f 8f 2b e2 b1 a9 d3 |...5~... j..+....
+                                   8d 40 b4 95 02 66 40 32  4f 12 00 98 a9 4d f7 02 |.@...f@2 O....M..
+                                   de 2a d4 75 a9 dd df a8  08 be 98 41 8c c8 3e 03 |.*.u.... ...A..>.
+                                   18 de 46 2d 16 54 52 71  b3 2a                   |..F-.TRq .*      
+[00:00:08.926,483] <inf> lima_ble: BLE: advertising for 500 ms
+[00:00:09.426,727] <inf> lima_ble: BLE: advertisement complete
+[00:00:09.426,757] <inf> lima_fsm: TRANSMITTING: BLE advertisement complete
+[00:00:09.426,818] <inf> lima_fsm: TRANSMITTING: confirmed -> COOLDOWN
+[00:00:09.426,849] <inf> lima_fsm: FSM: TRANSMITTING -> COOLDOWN
+[00:00:09.426,879] <inf> lima_fsm: COOLDOWN: suppressing events for 5000 ms
+[00:00:14.426,940] <err> lima_fsm: cooldown_work FIRED at 14426 ms
+[00:00:14.426,971] <inf> lima_fsm: COOLDOWN: timer expired
+[00:00:14.427,032] <inf> lima_fsm: COOLDOWN: expired -> ARMED
+[00:00:14.427,062] <inf> lima_fsm: FSM: COOLDOWN -> ARMED
+[00:00:14.427,093] <inf> lima_fsm: ARMED: sensors active, heartbeat started
+[00:00:16.242,034] <inf> lima_fsm: FSM: ARMED -> EVENT_DETECTED
+--- 1 messages dropped ---
+[00:00:16.242,065] <inf> lima_fsm: EVENT DETECTED: type=0x02 at t=16241 ms
+[00:00:16.242,095] <inf> lima_fsm: FSM: EVENT_DETECTED -> SIGNING
+[00:00:16.242,126] <inf> lima_fsm: SIGNING: building payload and signing...
+[00:00:16.242,126] <inf> lima_crypto: CRYPTO: payload built â node=DE:AD:BE:EF:00:01 seq=2 evt=0x02 accel=0.94 delta_pa=0.00
+[00:00:16.242,156] <inf> lima_crypto:   payload:
+                                      de ad be ef 00 01 02 00  02 00 00 00 71 3f 00 00 |........ ....q?..
+                                      d4 5f 71 3f 00 00 00 00                          |._q?....         
+[00:00:16.270,690] <inf> lima_crypto: CRYPTO: signed 64 bytes â sig[0..3]=140B5E8A
+[00:00:16.270,690] <inf> lima_crypto: CRYPTO: full signature (64 bytes):
+[00:00:16.270,721] <inf> lima_crypto:   sig:
+                                      14 0b 5e 8a d9 f9 82 0d  8e af a6 55 ee 9c 32 2b |..^..... ...U..2+
+                                      f5 11 56 d3 4d b1 3e e6  22 4d 0f 23 cf 59 60 0f |..V.M.>. "M.#.Y`.
+                                      05 8c dd 17 d8 b6 46 54  0a 3c ae 33 99 46 fa 1a |......FT .<.3.F..
+                                      62 13 d6 a7 f7 23 89 a9  db b9 3e 70 70 aa c3 76 |b....#.. ..>pp..v
+[00:00:16.270,721] <inf> lima_crypto: CRYPTO: signed payload (24 bytes):
+[00:00:16.270,751] <inf> lima_crypto:   payload:
+                                      de ad be ef 00 01 02 00  02 00 00 00 71 3f 00 00 |........ ....q?..
+                                      d4 5f 71 3f 00 00 00 00                          |._q?....         
+[00:00:16.270,782] <inf> lima_fsm: SIGNING: sig[0..7]=140B5E8AD9F9820D stored (64 bytes)
+[00:00:16.270,782] <inf> lima_fsm:   fsm.last_sig:
+                                   14 0b 5e 8a d9 f9 82 0d  8e af a6 55 ee 9c 32 2b |..^..... ...U..2+
+                                   f5 11 56 d3 4d b1 3e e6  22 4d 0f 23 cf 59 60 0f |..V.M.>. "M.#.Y`.
+                                   05 8c dd 17 d8 b6 46 54  0a 3c ae 33 99 46 fa 1a |......FT .<.3.F..
+                                   62 13 d6 a7 f7 23 89 a9  db b9 3e 70 70 aa c3 76 |b....#.. ..>pp..v
+[00:00:16.270,812] <inf> lima_fsm: SIGNING: payload ready -> TRANSMITTING
+[00:00:16.270,843] <inf> lima_fsm: FSM: SIGNING -> TRANSMITTING
+[00:00:16.270,874] <inf> lima_fsm: TRANSMITTING: advertising signed payload via BLE
+[00:00:16.270,904] <inf> lima_ble: BLE: advertising â node=DE:AD:BE:EF:00:01 evt=0x02 seq=2 accel=0.94 delta_pa=0.00 sig[0..3]=140B5E8A
+[00:00:16.270,935] <inf> lima_ble:   adv_payload:
+                                   ff ff 02 02 02 00 00 00  71 3f 00 00 d4 5f 71 3f |........ q?..._q?
+                                   00 00 00 00 de ad be ef  00 01 14 0b 5e 8a d9 f9 |........ ....^...
+                                   82 0d 8e af a6 55 ee 9c  32 2b f5 11 56 d3 4d b1 |.....U.. 2+..V.M.
+                                   3e e6 22 4d 0f 23 cf 59  60 0f 05 8c dd 17 d8 b6 |>."M.#.Y `.......
+                                   46 54 0a 3c ae 33 99 46  fa 1a 62 13 d6 a7 f7 23 |FT.<.3.F ..b....#
+                                   89 a9 db b9 3e 70 70 aa  c3 76                   |....>pp. .v      
+[00:00:16.271,453] <inf> lima_ble: BLE: advertising for 500 ms
+[00:00:16.771,728] <inf> lima_ble: BLE: advertisement complete
+[00:00:16.771,759] <inf> lima_fsm: TRANSMITTING: BLE advertisement complete
+[00:00:16.771,820] <inf> lima_fsm: TRANSMITTING: confirmed -> COOLDOWN
+[00:00:16.771,850] <inf> lima_fsm: FSM: TRANSMITTING -> COOLDOWN
+[00:00:16.771,850] <inf> lima_fsm: COOLDOWN: suppressing events for 5000 ms
+[00:00:21.771,942] <err> lima_fsm: cooldown_work FIRED at 21771 ms
+[00:00:21.771,972] <inf> lima_fsm: COOLDOWN: timer expired
+[00:00:21.772,033] <inf> lima_fsm: COOLDOWN: expired -> ARMED
+[00:00:21.772,064] <inf> lima_fsm: FSM: COOLDOWN -> ARMED
+[00:00:21.772,094] <inf> lima_fsm: ARMED: sensors active, heartbeat started
