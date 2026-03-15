@@ -31,8 +31,6 @@ use ratatui::{
 use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
 
-use lima_types::{NONCE_LEN, TAG_LEN, OUTER_SIG_LEN};
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 // [00:00:06.075,622] <inf> lima_crypto: CRYPTO: existing key found at slot 0x00000001
@@ -64,7 +62,7 @@ struct EventRecord {
     node_id:      String,
     received_at:  u64,
     sig_verified: bool,
-    rssi:         i16,
+    rssi:         i8,
     raw_blob_hex: String,
 }
 
@@ -314,7 +312,7 @@ async fn ble_task(
             }
 
             let node_id = props.address.to_string();
-            let rssi    = props.rssi.unwrap_or(0);
+            let rssi = props.rssi.unwrap_or(0) as i8;
 
             for (_, bytes) in &props.manufacturer_data {
                 let sig_verified = verify_outer_sig(bytes, &vk);
