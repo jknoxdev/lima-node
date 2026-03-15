@@ -318,6 +318,7 @@ async fn ble_task(
                 let sig_verified = verify_outer_sig(bytes, &vk);
                 let raw_blob_hex = hex::encode(bytes);
 
+
                 let received_at = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
