@@ -64,10 +64,10 @@ struct EventRecord {
     node_id:      String,
     received_at:  u64,
     sig_verified: bool,
-    event_type:   String,
     rssi:         i16,
     raw_blob_hex: String,
 }
+
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -113,7 +113,6 @@ fn db_init(conn: &Connection) -> rusqlite::Result<()> {
             node_id       TEXT    NOT NULL,
             received_at   INTEGER NOT NULL,
             sig_verified  INTEGER NOT NULL,
-            event_type    TEXT    NOT NULL,
             rssi          INTEGER NOT NULL,
             raw_blob      BLOB    NOT NULL
         );",
@@ -123,13 +122,12 @@ fn db_init(conn: &Connection) -> rusqlite::Result<()> {
 fn db_insert(conn: &Connection, rec: &EventRecord) -> rusqlite::Result<i64> {
     conn.execute(
         "INSERT INTO events
-            (node_id, received_at, sig_verified, event_type, rssi, raw_blob)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            (node_id, received_at, sig_verified, rssi, raw_blob)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             rec.node_id,
             rec.received_at,
             rec.sig_verified as i32,
-            rec.event_type,
             rec.rssi,
             rec.raw_blob_hex,
         ],
@@ -211,7 +209,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(header, chunks[0]);
 
     // ── Event table ───────────────────────────────────────────────────────────
-    let header_cells = ["time", "node_id", "type", "seq", "sig", "rssi"]
+    let header_cells = ["time", "node_id", "seq", "sig", "rssi"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
     let table_header = Row::new(header_cells).height(1).bottom_margin(1);
@@ -228,7 +226,6 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         Row::new(vec![
             Cell::from(time_str),
             Cell::from(rec.node_id.clone()),
-            Cell::from(rec.event_type.clone()),
             Cell::from("—"),   // seq: not decoded until AES decrypt sprint
             sig_cell,
             Cell::from(format!("{} dBm", rec.rssi)),
@@ -241,7 +238,6 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         [
             Constraint::Length(12),  // time
             Constraint::Length(20),  // node_id
-            Constraint::Length(14),  // type
             Constraint::Length(8),   // seqf
             Constraint::Length(12),  // sig
             Constraint::Length(10),  // rssi
@@ -287,6 +283,76 @@ fn format_timestamp(ts_ms: u64) -> String {
     format!("{:02}:{:02}:{:02}", h, m, s)
 }
 
+async fn ble_task(
+    app: Arc<Mutex<App>>,
+    conn: Arc<Mutex<Connection>>,
+    vk: Arc<VerifyingKey>,
+) {
+    let manager  = Manager::new().await.expect("BLE manager failed");
+    let adapters = manager.adapters().await.expect("No BLE adapters");
+    let adapter  = adapters.into_iter().next().expect("No BLE adapter found");
+
+    adapter.start_scan(ScanFilter::default()).await
+        .expect("BLE scan failed");
+
+    loop {
+        let peripherals = adapter.peripherals().await.unwrap_or_default();
+
+        for p in peripherals {
+            let props = match p.properties().await {
+                Ok(Some(p)) => p,
+                _ => continue,
+            };
+
+            let is_lima = props.local_name
+                .as_deref()
+                .map(|n| n.starts_with(LIMA_ADV_PREFIX))
+                .unwrap_or(false);
+
+            if !is_lima {
+                continue;
+            }
+
+            let node_id = props.address.to_string();
+            let rssi    = props.rssi.unwrap_or(0);
+
+            for (_, bytes) in &props.manufacturer_data {
+                let sig_verified = verify_outer_sig(bytes, &vk);
+                let raw_blob_hex = hex::encode(bytes);
+
+                let received_at = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                let mut rec = EventRecord {
+                    id: 0,
+                    node_id: node_id.clone(),
+                    received_at,
+                    sig_verified,
+                    rssi,
+                    raw_blob_hex,
+                };
+
+                {
+                    let db = conn.lock().await;
+                    match db_insert(&db, &rec) {
+                        Ok(id) => rec.id = id,
+                        Err(e) => eprintln!("DB insert error: {}", e),
+                    }
+                }
+
+                {
+                    let mut a = app.lock().await;
+                    a.push(rec);
+                }
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -302,87 +368,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── App state ─────────────────────────────────────────────────────────────
     let app = Arc::new(Mutex::new(App::new()));
 
-    // ── BLE scanner task ──────────────────────────────────────────────────────
-    let app_ble  = Arc::clone(&app);
-    let conn_ble = Arc::clone(&conn);
-    let vk_ble   = Arc::clone(&verifying_key);
-
-    tokio::spawn(async move {
-        let manager  = Manager::new().await.expect("BLE manager failed");
-        let adapters = manager.adapters().await.expect("No BLE adapters");
-        let adapter  = adapters.into_iter().next().expect("No BLE adapter found");
-
-        adapter.start_scan(ScanFilter::default()).await
-            .expect("BLE scan failed");
-
-        loop {
-            let peripherals = adapter.peripherals().await.unwrap_or_default();
-
-            for p in peripherals {
-                let props = match p.properties().await {
-                    Ok(Some(p)) => p,
-                    _ => continue,
-                };
-
-                let is_lima = props.local_name
-                    .as_deref()
-                    .map(|n| n.starts_with(LIMA_ADV_PREFIX))
-                    .unwrap_or(false);
-
-                if !is_lima {
-                    continue;
-                }
-
-                let node_id = props.address.to_string();
-                let rssi    = props.rssi.unwrap_or(0);
-
-                for (_, bytes) in &props.manufacturer_data {
-                    let sig_verified = verify_outer_sig(bytes, &vk_ble);
-                    let raw_blob_hex = hex::encode(bytes);
-
-                    // Best-effort event type from first byte after potential header
-                    // Real decode happens after AES decrypt sprint
-                    let event_type = if bytes.len() > 4 {
-                        format!("0x{:02X}", bytes[4])
-                    } else {
-                        "unknown".to_string()
-                    };
-
-                    let received_at = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-
-                    let mut rec = EventRecord {
-                        id: 0,
-                        node_id: node_id.clone(),
-                        received_at,
-                        sig_verified,
-                        event_type,
-                        rssi,
-                        raw_blob_hex,
-                    };
-
-                    // Store to SQLite
-                    {
-                        let db = conn_ble.lock().await;
-                        match db_insert(&db, &rec) {
-                            Ok(id) => rec.id = id,
-                            Err(e) => eprintln!("DB insert error: {}", e),
-                        }
-                    }
-
-                    // Update TUI state
-                    {
-                        let mut a = app_ble.lock().await;
-                        a.push(rec);
-                    }
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    });
+    tokio::spawn(ble_task(
+    Arc::clone(&app),
+    Arc::clone(&conn),
+    Arc::clone(&verifying_key),
+    ));
+   
 
     // ── TUI setup ─────────────────────────────────────────────────────────────
     enable_raw_mode()?;
