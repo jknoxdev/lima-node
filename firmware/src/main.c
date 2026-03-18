@@ -156,6 +156,27 @@ static void rtc_wakeup_expiry_fn(struct k_work *work)
     lima_post_event(&e);
 }
 
+/* ── Node identity ───────────────────────────────────────────────────────── */
+
+static uint8_t node_id[6];
+
+static void hw_init_node_id(void)
+{
+    bt_addr_le_t addr;
+    size_t count = 1;
+
+    bt_id_get(&addr, &count);
+
+    /* Copy in reverse — BT address is little-endian, node_id is human-readable */
+    for (int i = 0; i < 6; i++) {
+        node_id[i] = addr.a.val[5 - i];
+    }
+
+    LOG_INF("NODE ID: %02X:%02X:%02X:%02X:%02X:%02X",
+            node_id[0], node_id[1], node_id[2],
+            node_id[3], node_id[4], node_id[5]);
+}
+
 /* ── Hardware Abstraction Layer ──────────────────────────────────────────── */
 
 static int hw_init_sensors(void)
@@ -571,6 +592,7 @@ int main(void)
     }
     
     bt_enable(NULL);
+    hw_init_node_id();
     if (lima_ble_init() != 0) {
         LOG_ERR("BLE init failed — transmitting unavailable");
     }
