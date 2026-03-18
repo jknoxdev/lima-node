@@ -89,8 +89,9 @@ static struct k_work_delayable rtc_wakeup_work;
 /* I2C prototype */
 static void hw_i2c_bus_recovery(void);
 
-/* onboard watchdog disable */
+/* onboard watchdog */
 const struct device *wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
+static int wdt_channel_id;
 
 
 /* ── Message queue ───────────────────────────────────────────────────────── */
@@ -154,6 +155,27 @@ static void rtc_wakeup_expiry_fn(struct k_work *work)
         .timestamp_ms = k_uptime_get_32(),
     };
     lima_post_event(&e);
+}
+
+/* ── Node identity ───────────────────────────────────────────────────────── */
+
+static uint8_t node_id[6];
+
+static void hw_init_node_id(void)
+{
+    bt_addr_le_t addr;
+    size_t count = 1;
+
+    bt_id_get(&addr, &count);
+
+    /* Copy in reverse — BT address is little-endian, node_id is human-readable */
+    for (int i = 0; i < 6; i++) {
+        node_id[i] = addr.a.val[5 - i];
+    }
+
+    LOG_INF("NODE ID: %02X:%02X:%02X:%02X:%02X:%02X",
+            node_id[0], node_id[1], node_id[2],
+            node_id[3], node_id[4], node_id[5]);
 }
 
 /* ── Hardware Abstraction Layer ──────────────────────────────────────────── */
@@ -342,9 +364,37 @@ static int hw_try_recover(void)
     return 0;
 }
 
-static void hw_watchdog_reset(void)
+void fsm_hw_wdt_kick(void)
 {
-    LOG_INF("[STUB] watchdog_reset");
+    wdt_feed(wdt, wdt_channel_id);
+}
+
+static void hw_watchdog_init(void)
+{
+    struct wdt_timeout_cfg wdt_cfg = {
+        .flags = WDT_FLAG_RESET_SOC,
+        .window.min = 0,
+        .window.max = 10000,   /* 10s — comfortably above worst-case FSM path */
+    };
+
+    if (!device_is_ready(wdt)) {
+        LOG_ERR("WDT: device not ready");
+        return;
+    }
+
+    wdt_channel_id = wdt_install_timeout(wdt, &wdt_cfg);
+    if (wdt_channel_id < 0) {
+        LOG_ERR("WDT: timeout install failed (%d)", wdt_channel_id);
+        return;
+    }
+
+    int ret = wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
+    if (ret < 0) {
+        LOG_ERR("WDT: setup failed (%d)", ret);
+        return;
+    }
+
+    LOG_INF("WDT: armed — 10s timeout, SOC reset on expiry");
 }
 
 static void hw_notify_low_battery(void)
@@ -362,7 +412,6 @@ static void __attribute__((unused)) suppress_stub_warnings(void)
     (void)hw_ble_stop;
     (void)hw_assert_fault_led;
     (void)hw_try_recover;
-    (void)hw_watchdog_reset;
     (void)hw_notify_low_battery;
 }
 
@@ -543,7 +592,7 @@ int main(void)
     LOG_INF("L.I.M.A. node firmware starting");
     LOG_INF("L.I.M.A.: suspending threads...");
 
-    wdt_disable(wdt);
+    hw_watchdog_init();
     k_thread_suspend(fsm_thread);
     k_thread_suspend(sensor_thread);
     
@@ -571,6 +620,7 @@ int main(void)
     }
     
     bt_enable(NULL);
+    hw_init_node_id();
     if (lima_ble_init() != 0) {
         LOG_ERR("BLE init failed — transmitting unavailable");
     }
