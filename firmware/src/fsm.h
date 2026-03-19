@@ -27,14 +27,14 @@ typedef enum {
     STATE_COUNT
 } lima_state_t;
 
-/* ── FSM Context ─────────────────────────────────────────────────────────── */
-/* Holds all mutable FSM state. Defined in fsm.c, declared extern here. */
 typedef struct {
-    lima_event_t    last_event;         /* Latched trigger event */
-    lima_payload_t  last_payload;       /* Payload built during SIGNING  */
-    uint32_t        armed_since_ms;     /* k_uptime when we entered ARMED */
-    uint32_t        cooldown_ms;        /* Configurable cooldown duration */
-    uint8_t         fault_retries;      /* Retry counter for FAULT recovery */
+    lima_event_t      last_event;
+    lima_payload_t    last_payload;
+    uint8_t           last_sig[64];      /* ECDSA-P256 signature from SIGNING */
+    size_t            last_sig_len;      /* actual sig length (usually 64)    */
+    uint32_t          armed_since_ms;
+    uint32_t          cooldown_ms;
+    uint8_t           fault_retries;
 } lima_fsm_ctx_t;
 
 

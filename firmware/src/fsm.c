@@ -380,11 +380,14 @@ static void signing_complete_cb(const lima_sig_result_t *result)
         lima_post_event(&e);
         return;
     }
-
-    LOG_INF("SIGNING: sig[0..7]=%02X%02X%02X%02X%02X%02X%02X%02X",
-            result->sig[0], result->sig[1], result->sig[2], result->sig[3],
-            result->sig[4], result->sig[5], result->sig[6], result->sig[7]);
-
+    memcpy(fsm.last_sig, result->sig, result->sig_len);
+    fsm.last_sig_len = result->sig_len;
+    LOG_INF("SIGNING: sig[0..7]=%02X%02X%02X%02X%02X%02X%02X%02X stored (%u bytes)",
+            fsm.last_sig[0], fsm.last_sig[1], fsm.last_sig[2], fsm.last_sig[3],
+            fsm.last_sig[4], fsm.last_sig[5], fsm.last_sig[6], fsm.last_sig[7],
+            fsm.last_sig_len);
+    LOG_HEXDUMP_INF(fsm.last_sig, fsm.last_sig_len, "  fsm.last_sig:");
+    
     lima_event_t e = {
         .type         = LIMA_EVT_SIGNING_COMPLETE,
         .timestamp_ms = k_uptime_get_32(),
@@ -452,7 +455,12 @@ static void state_transmitting_enter(void)
 
     k_work_reschedule(&tx_timeout_work, K_MSEC(TX_TIMEOUT_MS));
 
-    int err = lima_ble_advertise(&fsm.last_payload, ble_tx_complete_cb);
+    int err = lima_ble_advertise(
+        &fsm.last_payload,
+        fsm.last_sig,
+        fsm.last_sig_len,
+        ble_tx_complete_cb
+    );
     if (err != 0) {
         LOG_ERR("TRANSMITTING: failed to start BLE adv (%d) -> FAULT", err);
         transition(STATE_FAULT);

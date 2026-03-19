@@ -32,36 +32,35 @@ typedef void (*lima_ble_cb_t)(lima_ble_err_t err);
 /* ── Advertised packet ───────────────────────────────────────────────────── */
 
 /*
- * Wire format — manufacturer-specific AD data (26 bytes):
+ * Wire format — extended manufacturer-specific AD data (90 bytes):
  *
  *  Offset  Size  Field
  *  ------  ----  -----
- *       0     2  Company ID (0xFFFF — test/internal use)
- *       2     1  LIMA protocol version (0x01)
+ *       0     2  Company ID (0xFFFF)
+ *       2     1  proto_version (0x02)
  *       3     1  event_type
- *       4     4  sequence (little-endian)
- *       5     4  timestamp_ms (little-endian)  [offset 8 from AD start]
- *      12     4  accel_g (IEEE 754 float, little-endian)
- *      16     4  delta_pa (IEEE 754 float, little-endian)
+ *       4     4  sequence
+ *       8     4  timestamp_ms
+ *      12     4  accel_g
+ *      16     4  delta_pa
  *      20     6  node_id
- *            26  total
- *
- * Signature is NOT included in v1 — 64-byte ECDSA sig exceeds 31-byte
- * AD limit. Signing occurs on-device; public key registered at gateway
- * provisioning. See ADR-007.
+ *      26    64  ECDSA-P256 signature
+ *            90  total
  */
+
 typedef struct __attribute__((packed)) {
-    uint16_t company_id;      /* 0xFFFF — internal/test                */
-    uint8_t  proto_version;   /* 0x01                                  */
+    uint16_t company_id;
+    uint8_t  proto_version;
     uint8_t  event_type;
     uint32_t sequence;
     uint32_t timestamp_ms;
     float    accel_g;
     float    delta_pa;
     uint8_t  node_id[6];
-} lima_adv_payload_t;         /* 26 bytes                              */
+    uint8_t  sig[64];
+} lima_adv_payload_t;   /* 90 bytes */
 
-BUILD_ASSERT(sizeof(lima_adv_payload_t) == 26, "lima_adv_payload_t size mismatch");
+BUILD_ASSERT(sizeof(lima_adv_payload_t) == 90, "lima_adv_payload_t size mismatch");
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
@@ -86,6 +85,9 @@ int lima_ble_init(void);
  * @param cb        Completion callback — must be non-NULL.
  * @return 0 if advertising started, negative errno on failure.
  */
-int lima_ble_advertise(const lima_payload_t *payload, lima_ble_cb_t cb);
+int lima_ble_advertise(const lima_payload_t *payload,
+                       const uint8_t *sig,
+                       size_t sig_len,
+                       lima_ble_cb_t cb);
 
 #endif /* LIMA_BLE_H */

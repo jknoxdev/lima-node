@@ -31,21 +31,24 @@ use ratatui::{
 use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
 
-use lima_types::{NONCE_LEN, TAG_LEN, OUTER_SIG_LEN};
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/// Hardcoded test verifying key (DER/SEC1 uncompressed, 65 bytes)
-/// Replace with provisioned key store in next sprint.
-/// This is the node verifying key from crypto-test ephemeral run —
-/// swap with your real node pubkey bytes when testing against firmware.
+// [00:00:06.075,622] <inf> lima_crypto: CRYPTO: existing key found at slot 0x00000001
+// [00:00:06.098,968] <inf> lima_crypto: CRYPTO: public key (65 bytes):
+// [00:00:06.098,999] <inf> lima_crypto:   pubkey:
+//                                       04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d |...}.M.. ....n...
+//                                       b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 |...e.Pii ...y....
+//                                       3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 |>B..f... .b..$.M.
+//                                       e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f |..,z.... H..[Y.H.
+//                                       d7                                               |.
+// [00:00:06.099,029] <inf> lima_crypto: CRYPTO: initialized — ECDSA-P256/SHA-256 ready (key_id=0x00000001)
+
 const TEST_NODE_PUBKEY_HEX: &str = concat!(
-    "04",
-    "82c776fe1af3e080e0d33a0b5968e6",
-    "bd933791097e3aa282cd6efa72ad093a",
-    "fd7550d59963ba232bb5e81e3c79a96d",
-    "637cd655affbee83c6ac401d395c98a3",
-    "35"
+    "04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d ",
+    "b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 ",
+    "3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 ",
+    "e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f ",
+    "d7"
 );
 
 const DB_PATH: &str = "lima_gateway.db";
@@ -59,10 +62,10 @@ struct EventRecord {
     node_id:      String,
     received_at:  u64,
     sig_verified: bool,
-    event_type:   String,
-    rssi:         i16,
+    rssi:         i8,
     raw_blob_hex: String,
 }
+
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -108,7 +111,6 @@ fn db_init(conn: &Connection) -> rusqlite::Result<()> {
             node_id       TEXT    NOT NULL,
             received_at   INTEGER NOT NULL,
             sig_verified  INTEGER NOT NULL,
-            event_type    TEXT    NOT NULL,
             rssi          INTEGER NOT NULL,
             raw_blob      BLOB    NOT NULL
         );",
@@ -118,13 +120,12 @@ fn db_init(conn: &Connection) -> rusqlite::Result<()> {
 fn db_insert(conn: &Connection, rec: &EventRecord) -> rusqlite::Result<i64> {
     conn.execute(
         "INSERT INTO events
-            (node_id, received_at, sig_verified, event_type, rssi, raw_blob)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            (node_id, received_at, sig_verified, rssi, raw_blob)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             rec.node_id,
             rec.received_at,
             rec.sig_verified as i32,
-            rec.event_type,
             rec.rssi,
             rec.raw_blob_hex,
         ],
@@ -135,26 +136,49 @@ fn db_insert(conn: &Connection, rec: &EventRecord) -> rusqlite::Result<i64> {
 // ── Crypto ────────────────────────────────────────────────────────────────────
 
 fn load_test_verifying_key() -> VerifyingKey {
-    let bytes = hex::decode(TEST_NODE_PUBKEY_HEX.replace("\n", ""))
-        .expect("TEST_NODE_PUBKEY_HEX invalid hex");
+    let bytes = hex::decode(TEST_NODE_PUBKEY_HEX.replace(['\n', ' '], ""))
+    .expect("TEST_NODE_PUBKEY_HEX invalid hex");
     VerifyingKey::from_sec1_bytes(&bytes)
         .expect("TEST_NODE_PUBKEY_HEX invalid P-256 key")
 }
 
-/// Verify outer ECDSA signature over (nonce || ciphertext || tag)
-/// Wire format: [nonce(12) | ciphertext(88) | tag(16) | outer_sig(64)]
+/// Wire format received (90 bytes):
+/// [company_id(2) | proto_ver(1) | event_type(1) | sequence(4) |
+///  timestamp_ms(4) | accel_g(4) | delta_pa(4) | node_id(6) | sig(64)]
+///
+/// Signed data is lima_payload_t (24 bytes):
+/// [node_id(6) | event_type(1) | reserved(1) | sequence(4) |
+///  timestamp_ms(4) | accel_g(4) | delta_pa(4)]
 fn verify_outer_sig(payload: &[u8], vk: &VerifyingKey) -> bool {
-    let min_len = NONCE_LEN + TAG_LEN + OUTER_SIG_LEN + 1;
-    if payload.len() < min_len {
+    const ADV_LEN:     usize = 90;
+    const SIG_LEN:     usize = 64;
+    const PAYLOAD_LEN: usize = 24;
+
+    if payload.len() < ADV_LEN {
         return false;
     }
 
-    let sig_offset = payload.len() - OUTER_SIG_LEN;
-    let signed_data = &payload[..sig_offset];
-    let sig_bytes   = &payload[sig_offset..];
+    // Extract fields from ADV layout
+    let event_type   = payload[3];
+    let sequence     = &payload[4..8];
+    let timestamp_ms = &payload[8..12];
+    let accel_g      = &payload[12..16];
+    let delta_pa     = &payload[16..20];
+    let node_id      = &payload[20..26];
+    let sig_bytes    = &payload[26..90];
+
+    // Reconstruct lima_payload_t layout (24 bytes) exactly as firmware built it
+    let mut signed_data = [0u8; PAYLOAD_LEN];
+    signed_data[0..6].copy_from_slice(node_id);       // node_id
+    signed_data[6]    = event_type;                    // event_type
+    signed_data[7]    = 0x00;                          // reserved
+    signed_data[8..12].copy_from_slice(sequence);      // sequence
+    signed_data[12..16].copy_from_slice(timestamp_ms); // timestamp_ms
+    signed_data[16..20].copy_from_slice(accel_g);      // accel_g
+    signed_data[20..24].copy_from_slice(delta_pa);     // delta_pa
 
     match Signature::from_slice(sig_bytes) {
-        Ok(sig) => vk.verify(signed_data, &sig).is_ok(),
+        Ok(sig) => vk.verify(&signed_data, &sig).is_ok(),
         Err(_)  => false,
     }
 }
@@ -183,7 +207,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(header, chunks[0]);
 
     // ── Event table ───────────────────────────────────────────────────────────
-    let header_cells = ["time", "node_id", "type", "seq", "sig", "rssi"]
+    let header_cells = ["time", "node_id", "seq", "sig", "rssi"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
     let table_header = Row::new(header_cells).height(1).bottom_margin(1);
@@ -200,7 +224,6 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         Row::new(vec![
             Cell::from(time_str),
             Cell::from(rec.node_id.clone()),
-            Cell::from(rec.event_type.clone()),
             Cell::from("—"),   // seq: not decoded until AES decrypt sprint
             sig_cell,
             Cell::from(format!("{} dBm", rec.rssi)),
@@ -213,8 +236,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         [
             Constraint::Length(12),  // time
             Constraint::Length(20),  // node_id
-            Constraint::Length(14),  // type
-            Constraint::Length(8),   // seq
+            Constraint::Length(8),   // seqf
             Constraint::Length(12),  // sig
             Constraint::Length(10),  // rssi
         ],
@@ -230,9 +252,23 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_stateful_widget(table, chunks[1], &mut app.table_state);
 
     // ── Footer ────────────────────────────────────────────────────────────────
+    let last_sig = app.events.first()
+    .map(|e| format!(
+        "{}  {}",
+        if e.sig_verified { "✓ VALID" } else { "✗ INVALID" },
+        e.raw_blob_hex.chars().take(8).collect::<String>()
+    ))
+    .unwrap_or_else(|| "--".to_string());
+        
+    let footer_title = format!(
+        " q: quit  |  DB: {}  |  last sig: {}...  |  skeleton: no AES decrypt yet ",
+        DB_PATH,
+        last_sig
+    );
+
     let footer = Block::default()
         .borders(Borders::ALL)
-        .title(" q: quit  |  DB: lima_gateway.db  |  skeleton: no AES decrypt yet ")
+        .title(footer_title)
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(footer, chunks[2]);
 }
@@ -243,6 +279,77 @@ fn format_timestamp(ts_ms: u64) -> String {
     let m = (secs % 3600) / 60;
     let s = secs % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
+}
+
+async fn ble_task(
+    app: Arc<Mutex<App>>,
+    conn: Arc<Mutex<Connection>>,
+    vk: Arc<VerifyingKey>,
+) {
+    let manager  = Manager::new().await.expect("BLE manager failed");
+    let adapters = manager.adapters().await.expect("No BLE adapters");
+    let adapter  = adapters.into_iter().next().expect("No BLE adapter found");
+
+    adapter.start_scan(ScanFilter::default()).await
+        .expect("BLE scan failed");
+
+    loop {
+        let peripherals = adapter.peripherals().await.unwrap_or_default();
+
+        for p in peripherals {
+            let props = match p.properties().await {
+                Ok(Some(p)) => p,
+                _ => continue,
+            };
+
+            let is_lima = props.local_name
+                .as_deref()
+                .map(|n| n.starts_with(LIMA_ADV_PREFIX))
+                .unwrap_or(false);
+
+            if !is_lima {
+                continue;
+            }
+
+            let node_id = props.address.to_string();
+            let rssi = props.rssi.unwrap_or(0) as i8;
+
+            for (_, bytes) in &props.manufacturer_data {
+                let sig_verified = verify_outer_sig(bytes, &vk);
+                let raw_blob_hex = hex::encode(bytes);
+
+
+                let received_at = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                let mut rec = EventRecord {
+                    id: 0,
+                    node_id: node_id.clone(),
+                    received_at,
+                    sig_verified,
+                    rssi,
+                    raw_blob_hex,
+                };
+
+                {
+                    let db = conn.lock().await;
+                    match db_insert(&db, &rec) {
+                        Ok(id) => rec.id = id,
+                        Err(e) => eprintln!("DB insert error: {}", e),
+                    }
+                }
+
+                {
+                    let mut a = app.lock().await;
+                    a.push(rec);
+                }
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -260,87 +367,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── App state ─────────────────────────────────────────────────────────────
     let app = Arc::new(Mutex::new(App::new()));
 
-    // ── BLE scanner task ──────────────────────────────────────────────────────
-    let app_ble  = Arc::clone(&app);
-    let conn_ble = Arc::clone(&conn);
-    let vk_ble   = Arc::clone(&verifying_key);
-
-    tokio::spawn(async move {
-        let manager  = Manager::new().await.expect("BLE manager failed");
-        let adapters = manager.adapters().await.expect("No BLE adapters");
-        let adapter  = adapters.into_iter().next().expect("No BLE adapter found");
-
-        adapter.start_scan(ScanFilter::default()).await
-            .expect("BLE scan failed");
-
-        loop {
-            let peripherals = adapter.peripherals().await.unwrap_or_default();
-
-            for p in peripherals {
-                let props = match p.properties().await {
-                    Ok(Some(p)) => p,
-                    _ => continue,
-                };
-
-                let is_lima = props.local_name
-                    .as_deref()
-                    .map(|n| n.starts_with(LIMA_ADV_PREFIX))
-                    .unwrap_or(false);
-
-                if !is_lima {
-                    continue;
-                }
-
-                let node_id = props.address.to_string();
-                let rssi    = props.rssi.unwrap_or(0);
-
-                for (_, bytes) in &props.manufacturer_data {
-                    let sig_verified = verify_outer_sig(bytes, &vk_ble);
-                    let raw_blob_hex = hex::encode(bytes);
-
-                    // Best-effort event type from first byte after potential header
-                    // Real decode happens after AES decrypt sprint
-                    let event_type = if bytes.len() > 4 {
-                        format!("0x{:02X}", bytes[4])
-                    } else {
-                        "unknown".to_string()
-                    };
-
-                    let received_at = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-
-                    let mut rec = EventRecord {
-                        id: 0,
-                        node_id: node_id.clone(),
-                        received_at,
-                        sig_verified,
-                        event_type,
-                        rssi,
-                        raw_blob_hex,
-                    };
-
-                    // Store to SQLite
-                    {
-                        let db = conn_ble.lock().await;
-                        match db_insert(&db, &rec) {
-                            Ok(id) => rec.id = id,
-                            Err(e) => eprintln!("DB insert error: {}", e),
-                        }
-                    }
-
-                    // Update TUI state
-                    {
-                        let mut a = app_ble.lock().await;
-                        a.push(rec);
-                    }
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    });
+    tokio::spawn(ble_task(
+    Arc::clone(&app),
+    Arc::clone(&conn),
+    Arc::clone(&verifying_key),
+    ));
+   
 
     // ── TUI setup ─────────────────────────────────────────────────────────────
     enable_raw_mode()?;

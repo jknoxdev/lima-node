@@ -195,7 +195,7 @@ void lima_crypto_build_payload(lima_payload_t *payload,
 
     /* reserved[2] stays zero from memset */
 
-    LOG_DBG("CRYPTO: payload built — node=%02X:%02X:%02X:%02X:%02X:%02X "
+    LOG_INF("CRYPTO: payload built — node=%02X:%02X:%02X:%02X:%02X:%02X "
             "seq=%u evt=0x%02X accel=%.2f delta_pa=%.2f",
             payload->node_id[0], payload->node_id[1], payload->node_id[2],
             payload->node_id[3], payload->node_id[4], payload->node_id[5],
@@ -203,6 +203,7 @@ void lima_crypto_build_payload(lima_payload_t *payload,
             payload->event_type,
             (double)payload->accel_g,
             (double)payload->delta_pa);
+    LOG_HEXDUMP_INF((const uint8_t *)payload, sizeof(lima_payload_t), "  payload:");
 }
 
 int lima_crypto_sign_async(const lima_payload_t *payload,
@@ -239,6 +240,11 @@ int lima_crypto_sign_async(const lima_payload_t *payload,
                 result.sig_len,
                 result.sig[0], result.sig[1],
                 result.sig[2], result.sig[3]);
+        LOG_INF("CRYPTO: full signature (%u bytes):", result.sig_len);
+        LOG_HEXDUMP_INF(result.sig, result.sig_len, "  sig:");
+        LOG_INF("CRYPTO: signed payload (%u bytes):", sizeof(lima_payload_t));
+        LOG_HEXDUMP_INF((const uint8_t *)payload, sizeof(lima_payload_t), "  payload:");
+  
     }
 
     /* Invoke callback — cb() posts event to FSM queue */
