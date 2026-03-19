@@ -638,6 +638,8 @@ lima_state_t fsm_get_state(void)
 
 void fsm_dispatch(const lima_event_t *evt)
 {
+    fsm_hw_wdt_kick(); 
+    
     /* Lifecycle events that drive boot sequencing */
     if (current_state == STATE_BOOT && evt->type == LIMA_EVT_INIT_COMPLETE) {
         transition(STATE_CALIBRATING);

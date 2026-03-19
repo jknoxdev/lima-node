@@ -14,7 +14,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-// #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/bluetooth.h>
 #include <psa/crypto.h>
 #include <string.h>
 #include "crypto.h"
@@ -157,8 +157,14 @@ void lima_crypto_build_payload(lima_payload_t *payload,
     // memcpy(payload->node_id, addr.a.val, sizeof(payload->node_id));
 
     /* TODO(v2): replace with bt_id_get() when BLE stack is enabled */
-    static const uint8_t dev_node_id[6] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01 };
-    memcpy(payload->node_id, dev_node_id, sizeof(payload->node_id));
+    // static const uint8_t dev_node_id[6] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01 };
+
+    // memcpy(payload->node_id, dev_node_id, sizeof(payload->node_id));
+
+    bt_addr_le_t addr;
+    size_t count = 1;
+    bt_id_get(&addr, &count);
+    memcpy(payload->node_id, addr.a.val, sizeof(payload->node_id));
 
     /* Monotonic sequence counter — anti-replay */
     payload->sequence     = ++sequence_counter;

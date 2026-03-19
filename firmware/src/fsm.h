@@ -41,6 +41,7 @@ typedef struct {
 /* ── FSM Logic API ───────────────────────────────────────────────────────── */
 
 void fsm_init(void);
+void fsm_hw_wdt_kick(void);
 void fsm_dispatch(const lima_event_t *evt); 
 lima_state_t fsm_get_state(void);
 const char* fsm_state_to_str(lima_state_t state);
