@@ -7,9 +7,9 @@
     pinctrl-names = "default", "sleep";
     clock-frequency = <I2C_BITRATE_STANDARD>;
 
-    mpu6050: mpu6050@68 {
+    mpu6050: mpu6050@69 {
         compatible = "invensense,mpu6050";
-        reg = <0x68>;
+        reg = <0x69>;
         status = "okay";
         accel-fs = <2>;
         gyro-fs = <250>;
