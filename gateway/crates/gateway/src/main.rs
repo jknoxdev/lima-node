@@ -301,13 +301,21 @@ async fn ble_task(
                 Ok(Some(p)) => p,
                 _ => continue,
             };
+            // -- ADV_NONCONN_IND -- advertising only mode
+            // let is_lima = props.local_name
+            //     .as_deref()
+            //     .map(|n| n.starts_with(LIMA_ADV_PREFIX))
+            //     .unwrap_or(false);
 
-            let is_lima = props.local_name
-                .as_deref()
-                .map(|n| n.starts_with(LIMA_ADV_PREFIX))
-                .unwrap_or(false);
+            // -- ADV_EXT_IND -- extended advertising 
+            // let is_lima = props.manufacturer_data
+            //     .contains_key(&0xFFFF);
+            // if !is_lima {
+            //     continue;
+            // }
 
-            if !is_lima {
+            // replace with this
+            if !props.manufacturer_data.contains_key(&0xFFFF_u16) {
                 continue;
             }
 
