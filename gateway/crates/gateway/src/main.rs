@@ -296,20 +296,17 @@ async fn ble_task(
     loop {
         let peripherals = adapter.peripherals().await.unwrap_or_default();
 
-        for p in peripherals {
-            let props = match p.properties().await {
-                Ok(Some(p)) => p,
-                _ => continue,
-            };
+            for p in peripherals {
+                let props = match p.properties().await {
+                    Ok(Some(p)) => p,
+                    _ => continue,
+                };
 
-            let is_lima = props.local_name
-                .as_deref()
-                .map(|n| n.starts_with(LIMA_ADV_PREFIX))
-                .unwrap_or(false);
-
-            if !is_lima {
-                continue;
-            }
+            let is_lima = props.manufacturer_data
+                .contains_key(&0xFFFF);
+                if !is_lima {
+                    continue;
+                }
 
             let node_id = props.address.to_string();
             let rssi = props.rssi.unwrap_or(0) as i8;
