@@ -88,10 +88,10 @@ static uint8_t sleep_led_on = 0;
 static uint32_t sleep_led_interval_ms = 0;
 static uint8_t sleep_led_white = 0;  /* 1 = white pulse (deep), 0 = red+blue (light) */
 
-/* RTC wakeup stub  */
+/* RTC */
 static const struct device *ds3231 = DEVICE_DT_GET(DT_NODELABEL(ds3231));
 static const struct gpio_dt_spec rtc_int = GPIO_DT_SPEC_GET(DT_NODELABEL(ds3231), isw_gpios);
-
+static bool rtc_time_valid = false;
 
 /* I2C prototype */
 static void hw_i2c_bus_recovery(void);
@@ -153,6 +153,14 @@ static void sleep_led_expiry_fn(struct k_work *work)
     }
 }
 
+/* ── WDT keepalive timer ──────────────────────────────────────────────────── */
+
+static void wdt_keepalive_cb(struct k_timer *t) {
+    LOG_INF("[WDT] keepalive ticked..........");
+    fsm_hw_wdt_kick();
+}
+K_TIMER_DEFINE(wdt_keepalive_timer, wdt_keepalive_cb, NULL);
+
 /* ── RTC ─────────────────────────────────────────────────────────────────── */
 
 static void rtc_alarm_cb(const struct device *dev,
@@ -198,6 +206,8 @@ static void hw_init_node_id(void)
     LOG_INF("NODE ID: %02X:%02X:%02X:%02X:%02X:%02X",
             node_id[0], node_id[1], node_id[2],
             node_id[3], node_id[4], node_id[5]);
+
+    k_timer_start(&wdt_keepalive_timer, K_MSEC(15000), K_MSEC(15000));
 }
 
 /* ── Hardware Abstraction Layer ──────────────────────────────────────────── */
@@ -254,10 +264,12 @@ static int hw_init_rtc(void)
     }
 
     struct maxim_ds3231_syncpoint sp = { 0 };
+
     ret = maxim_ds3231_get_syncpoint(ds3231, &sp);
     if (ret == 0) {
         LOG_INF("[RTC] time valid: %u seconds since epoch",
                 (uint32_t)sp.rtc.tv_sec);
+        rtc_time_valid = true;
     } else {
         LOG_WRN("[RTC] oscillator stopped — time invalid, needs provisioning");
     }
@@ -445,7 +457,7 @@ static void hw_watchdog_init(void)
     struct wdt_timeout_cfg wdt_cfg = {
         .flags = WDT_FLAG_RESET_SOC,
         .window.min = 0,
-        .window.max = 60000,   /* 60s — comfortably above worst-case FSM path */
+        .window.max = 30000,   /* 30s — comfortably above worst-case FSM path */
     };
 
     if (!device_is_ready(wdt)) {
@@ -465,7 +477,8 @@ static void hw_watchdog_init(void)
         return;
     }
 
-    LOG_INF("WDT: armed — 10s timeout, SOC reset on expiry");
+    LOG_INF("WDT: armed — 30s timeout, SOC reset on expiry");
+    fsm_hw_wdt_kick();
 }
 
 static void hw_notify_low_battery(void)
@@ -500,6 +513,10 @@ void fsm_hw_enter_deep_sleep(void)
 
     if (!device_is_ready(ds3231)) {
         LOG_ERR("[RTC] DS3231 not ready!");
+        return;
+    }
+    if (!rtc_time_valid) {
+        LOG_WRN("[RTC] time not provisioned — falling back to k_work timer for wakeup");
         return;
     }
 
