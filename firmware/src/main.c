@@ -184,7 +184,7 @@ static struct gpio_callback rtc_gpio_cb_data;
 
 static void rtc_gpio_cb(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
-    LOG_INF("[RTC] INT/SQW GPIO fired on P0.06!");
+    LOG_INF("[RTC] INT/SQW GPIO fired on P0.%d!", rtc_int.pin);
 }
 
 /* ── Node identity ───────────────────────────────────────────────────────── */
