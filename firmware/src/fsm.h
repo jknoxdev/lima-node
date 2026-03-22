@@ -6,7 +6,7 @@
 #include "events.h"
 #include "crypto.h"
 
-#define SLEEP_INACTIVITY_MS     8000   /* 30s no event → deep sleep               */
+#define SLEEP_INACTIVITY_MS     120000   /* no event → deep sleep             */
 #define TX_TIMEOUT_MS           1500     /* tune later */
 #define MAX_FAULT_RETRIES       3
 #define ARMED_DWELL_MS          3000

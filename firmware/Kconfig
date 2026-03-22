@@ -19,7 +19,7 @@ config LIMA_CRYPTO_LOG_LEVEL
 
 config LIMA_DEEP_SLEEP_INTERVAL_MS
     int "Deep sleep wakeup interval (ms)"
-    default 6000
+    default 120000
 
 config LIMA_BARO_THRESHOLD_PA
     int "Barometric pressure breach threshold in Pascals"
