@@ -351,25 +351,25 @@ static void hw_i2c_bus_recovery(void)
 {
     LOG_INF("BOOT: I2C bus recovery on P0.%d/P0.%d", I2C0_SCL_PIN, I2C0_SDA_PIN);
 
-    const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
-    if (!device_is_ready(gpio0_dev)) {
-        LOG_ERR("GPIO0 device not ready for recovery");
-        return;
-    }
+    // const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+    // if (!device_is_ready(gpio0_dev)) {
+    //     LOG_ERR("GPIO0 device not ready for recovery");
+    //     return;
+    // }
 
-    gpio_pin_configure(gpio0_dev, I2C0_SCL_PIN, GPIO_OUTPUT_HIGH);
-    gpio_pin_configure(gpio0_dev, I2C0_SDA_PIN, GPIO_INPUT);
+    // gpio_pin_configure(gpio0_dev, I2C0_SCL_PIN, GPIO_OUTPUT_HIGH);
+    // gpio_pin_configure(gpio0_dev, I2C0_SDA_PIN, GPIO_INPUT);
 
-    for (int i = 0; i < 9; i++) {
-        gpio_pin_set_raw(gpio0_dev, I2C0_SCL_PIN, 1);
-        k_busy_wait(5);
-        gpio_pin_set_raw(gpio0_dev, I2C0_SCL_PIN, 0);
-        k_busy_wait(5);
-    }
-    gpio_pin_set_raw(gpio0_dev, I2C0_SCL_PIN, 1);
+    // for (int i = 0; i < 9; i++) {
+    //     gpio_pin_set_raw(gpio0_dev, I2C0_SCL_PIN, 1);
+    //     k_busy_wait(5);
+    //     gpio_pin_set_raw(gpio0_dev, I2C0_SCL_PIN, 0);
+    //     k_busy_wait(5);
+    // }
+    // gpio_pin_set_raw(gpio0_dev, I2C0_SCL_PIN, 1);
 
-    gpio_pin_configure(gpio0_dev, I2C0_SCL_PIN, GPIO_DISCONNECTED);
-    gpio_pin_configure(gpio0_dev, I2C0_SDA_PIN, GPIO_DISCONNECTED);
+    // gpio_pin_configure(gpio0_dev, I2C0_SCL_PIN, GPIO_DISCONNECTED);
+    // gpio_pin_configure(gpio0_dev, I2C0_SDA_PIN, GPIO_DISCONNECTED);
 
     LOG_INF("BOOT: I2C recovery complete");
 }
@@ -687,12 +687,17 @@ int main(void)
     hw_watchdog_init();
     k_thread_suspend(fsm_thread);
     k_thread_suspend(sensor_thread);
+
+    LOG_INF("L.I.M.A.: ... threads suspended");
     
     gpio_pin_configure_dt(&led_r, GPIO_OUTPUT_INACTIVE);
     gpio_pin_configure_dt(&led_g, GPIO_OUTPUT_INACTIVE);
     gpio_pin_configure_dt(&led_b, GPIO_OUTPUT_INACTIVE);
 
+    LOG_INF("L.I.M.A.: ... gpio led pins assigned");
+
     hw_i2c_bus_recovery();
+
     k_msleep(50); 
     if (hw_init_sensors() != 0) {
         LOG_ERR("Sensor init failed!");
