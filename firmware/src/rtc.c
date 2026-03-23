@@ -26,6 +26,7 @@
 #include <zephyr/drivers/rtc/maxim_ds3231.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/notify.h>
+#include <zephyr/drivers/i2c.h>
 #include "rtc.h"
 #include "events.h"   /* lima_event_t, LIMA_EVT_RTC_WAKEUP */
 
