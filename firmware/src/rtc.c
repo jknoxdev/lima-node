@@ -331,7 +331,7 @@ int lima_rtc_set_epoch(uint32_t epoch)
     return 0;
 }
 
-void lima_rtc_nvs_flush(void)
+void lima_rtc_flush(void)
 {
     if (boot_epoch == 0) return;
     rtc_settings_write_epoch(lima_rtc_get_epoch());
@@ -347,7 +347,7 @@ void lima_rtc_arm_wakeup(uint32_t interval_ms)
     }
 
     /* Flush epoch before sleep so last-known time survives power loss */
-    lima_rtc_nvs_flush();
+    lima_rtc_flush();
 
     uint32_t now = 0;
     counter_get_value(ds3231, &now);

@@ -14,4 +14,5 @@ target_sources(app PRIVATE
     src/fsm.c
     src/crypto.c
     src/ble.c
+    src/rtc.c
 )

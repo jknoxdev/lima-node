@@ -108,12 +108,12 @@ uint64_t lima_rtc_timestamp_ms(void);
 int lima_rtc_set_epoch(uint32_t epoch);
 
 /**
- * @brief  Flush current epoch to NVS immediately.
+ * @brief  Flush current epoch to Settings immediately.
  *
  * Called on clean shutdown or before deep sleep.
  * The periodic timer already handles normal operation.
  */
-void lima_rtc_nvs_flush(void);
+void lima_rtc_flush(void);
 
 /**
  * @brief  Arm DS3231 alarm for deep-sleep wakeup.
