@@ -37,3 +37,7 @@ config LIMA_BLE_LOG_LEVEL
 config LIMA_BLE_ADV_DURATION_MS
     int "BLE advertisement duration (ms)"
     default 500
+
+config LIMA_PROVISION_UNIX_TIME
+    int "RTC provisioning timestamp (Unix epoch, 0 = disabled)"
+    default 0

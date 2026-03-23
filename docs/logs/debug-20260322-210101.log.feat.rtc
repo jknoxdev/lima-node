@@ -1,0 +1,69 @@
+íÂúRíÂcH±\ªtÈ¾š`ÈÄ»aÈÄiÙmÂaÿRÿRq ÍøRmÂÿøRíÂaˆ!\j ¤jíbx1Ê„|b‘’@!^R„	b€…!~zh•RmÂcÿRaÿS:ÄÄ3°1Ê€ob¢XÿøRíÂaÿRc.³âRíÂaÿ‹â˜*** Booting nRF Connect SDK v3.2.2-74845e169be2 ***
+*** Using Zephyr OS v4.2.99-fe4f0106803e ***
+[00:00:00.115,447] [0m<inf> fs_nvs: GC Done marker found[0m
+[00:00:00.202,575] [0m<inf> fs_nvs: 2 Sectors of 4096 bytes[0m
+[00:00:00.202,575] [0m<inf> fs_nvs: alloc wra: 1, fd0[0m
+[00:00:00.202,606] [0m<inf> fs_nvs: data wra: 1, 70[0m
+[00:00:00.202,636] [0m<inf> lima_main: L.I.M.A. node firmware starting[0m
+[00:00:00.202,636] [0m<inf> lima_main: L.I.M.A.: suspending threads...[0m
+[00:00:00.202,667] [0m<inf> lima_main: WDT: armed â€” 30s timeout, SOC reset on expiry[0m
+[00:00:00.202,697] [0m<inf> lima_main: L.I.M.A.: ... threads suspended[0m
+[00:00:00.202,728] [0m<inf> lima_main: L.I.M.A.: ... gpio led pins assigned[0m
+[00:00:00.202,728] [0m<inf> lima_main: BOOT: I2C bus recovery on P0.4/P0.5[0m
+[00:00:00.202,758] [0m<inf> lima_main: BOOT: I2C recovery complete[0m
+[00:00:00.252,868] [0m<inf> lima_main: MPU6050 ready[0m
+[00:00:00.252,868] [0m<inf> lima_main: BME280 ready[0m
+[00:00:00.252,899] [0m<inf> lima_main: [RTC] DS3231 ready[0m
+[00:00:00.253,295] [0m<inf> lima_main: [RTC] alarm flags cleared[0m
+[00:00:00.253,326] [1;33m<wrn> lima_main: [RTC] oscillator stopped â€” time invalid, attempting provisioning...[0m
+[00:00:00.253,387] [0m<inf> DS3231: sync 1774226035 in 1000 ms after 253[0m
+[00:00:01.253,356] [0m<inf> DS3231: sync_timer fired[0m
+[00:00:01.254,394] [0m<inf> DS3231: sync 1774226035 at 1253[0m
+[00:00:01.254,455] [0m<inf> lima_main: [RTC] time provisioned: 1774226034 from Kconfig[0m
+[00:00:01.254,486] [0m<inf> lima_main: [RTC] GPIO interrupt armed on P0.28[0m
+[00:00:01.254,486] [0m<inf> lima_main: [RTC] initialized â€” counter running, stale alarms cleared[0m
+[00:00:01.254,486] [0m<inf> lima_main: USB settle: 1/6 - start sleep[0m
+[00:00:02.254,577] [0m<inf> lima_main: USB settle: 1/6 - done[0m
+[00:00:02.254,608] [0m<inf> lima_main: USB settle: 2/6 - start sleep[0m
+[00:00:03.254,730] [0m<inf> lima_main: USB settle: 2/6 - done[0m
+[00:00:03.254,730] [0m<inf> lima_main: USB settle: 3/6 - start sleep[0m
+[00:00:04.254,821] [0m<inf> lima_main: USB settle: 3/6 - done[0m
+[00:00:04.254,852] [0m<inf> lima_main: USB settle: 4/6 - start sleep[0m
+[00:00:05.254,974] [0m<inf> lima_main: USB settle: 4/6 - done[0m
+[00:00:05.254,974] [0m<inf> lima_main: USB settle: 5/6 - start sleep[0m
+[00:00:06.255,065] [0m<inf> lima_main: USB settle: 5/6 - done[0m
+[00:00:06.255,096] [0m<inf> lima_main: USB settle: 6/6 - start sleep[0m
+[00:00:07.255,218] [0m<inf> lima_main: USB settle: 6/6 - done[0m
+[00:00:07.257,476] [0m<inf> lima_crypto: CRYPTO: existing key found at slot 0x00000001[0m
+[00:00:07.280,975] [0m<inf> lima_crypto: CRYPTO: public key (65 bytes):[0m
+[00:00:07.281,005] [0m<inf> lima_crypto:   pubkey:
+                                      04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d |...}.M.. ....n...
+                                      b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 |...e.Pii ...y....
+                                      3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 |>B..f... .b..$.M.
+                                      e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f |..,z.... H..[Y.H.
+                                      d7                                               |.                [0m
+[00:00:07.281,036] [0m<inf> lima_crypto: CRYPTO: initialized â€” ECDSA-P256/SHA-256 ready (key_id=0x00000001)[0m
+[00:00:07.281,127] [0m<inf> bt_sdc_hci_driver: SoftDevice Controller build revision: 
+                                            90 3d 6a f1 a5 ad 64 1d  cd 27 3e bf fc 68 0f 40 |.=j...d. .'>..h.@
+                                            40 99 ca ac                                      |@...             [0m
+[00:00:07.283,386] [0m<inf> bt_hci_core: HW Platform: Nordic Semiconductor (0x0002)[0m
+[00:00:07.283,416] [0m<inf> bt_hci_core: HW Variant: nRF52x (0x0002)[0m
+[00:00:07.283,447] [0m<inf> bt_hci_core: Firmware: Standard Bluetooth controller (0x00) Version 144.27197 Build 1689101809[0m
+[00:00:07.284,301] [0m<inf> bt_hci_core: HCI transport: SDC[0m
+[00:00:07.284,423] [0m<inf> bt_hci_core: Identity: E3:79:63:12:EF:B1 (random)[0m
+[00:00:07.284,484] [0m<inf> bt_hci_core: HCI: version 6.2 (0x10) revision 0x105e, manufacturer 0x0059[0m
+[00:00:07.284,515] [0m<inf> bt_hci_core: LMP: version 6.2 (0x10) subver 0x105e[0m
+[00:00:07.284,515] [0m<inf> lima_main: NODE ID: E3:79:63:12:EF:B1[0m
+[00:00:07.285,034] [0m<inf> lima_ble: BLE: initialized â€” LIMA_NODE_01 ready to advertise (ext ADV)[0m
+[00:00:07.285,034] [0m<inf> lima_main: Starting LIMA threads...[0m
+[00:00:07.285,095] [0m<inf> lima_main: FSM thread started[0m
+[00:00:07.285,095] [0m<inf> lima_fsm: FSM: Initializing work items[0m
+[00:00:07.285,125] [0m<inf> lima_fsm: BOOT: entered[0m
+[00:00:07.285,186] [0m<inf> lima_fsm: FSM: Initialized in BOOT[0m
+[00:00:07.285,217] [0m<inf> lima_fsm: FSM: BOOT -> CALIBRATING[0m
+[00:00:07.285,247] [0m<inf> lima_fsm: CALIBRATING: warming up sensors[0m
+[00:00:07.285,278] [0m<inf> lima_fsm: FSM: CALIBRATING -> ARMED[0m
+[00:00:07.285,308] [0m<inf> lima_fsm: ARMED: sensors active, heartbeat started[0m
+[00:00:07.285,369] [0m<inf> lima_main: Sensor thread started... sleeping 500ms for FSM boot & calibration...[0m
+[00:00:07.785,491] [0m<inf> lima_main: Sensor thread: 500ms expired...[0m
+[00:00:07.788,940] [0m<inf> lima_main: BARO: baseline set to 99.08 hPa[0m

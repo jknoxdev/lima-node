@@ -33,6 +33,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/sys/notify.h>
 #include "ble.h"
 #include <math.h>
 #include <time.h>
@@ -92,6 +93,8 @@ static uint8_t sleep_led_white = 0;  /* 1 = white pulse (deep), 0 = red+blue (li
 static const struct device *ds3231 = DEVICE_DT_GET(DT_NODELABEL(ds3231));
 static const struct gpio_dt_spec rtc_int = GPIO_DT_SPEC_GET(DT_NODELABEL(ds3231), isw_gpios);
 static bool rtc_time_valid = false;
+static struct k_work_delayable rtc_fallback_work;
+struct sys_notify notify;
 
 /* I2C prototype */
 static void hw_i2c_bus_recovery(void);
@@ -187,6 +190,15 @@ static void rtc_gpio_cb(const struct device *dev, struct gpio_callback *cb, uint
     LOG_INF("[RTC] INT/SQW GPIO fired on P0.%d!", rtc_int.pin);
 }
 
+static void rtc_fallback_cb(struct k_work *work) {
+    lima_event_t e = {
+        .type         = LIMA_EVT_RTC_WAKEUP,
+        .timestamp_ms = k_uptime_get_32(),
+    };
+    lima_post_event(&e);
+}
+
+
 /* ── Node identity ───────────────────────────────────────────────────────── */
 
 static uint8_t node_id[6];
@@ -242,7 +254,6 @@ static int hw_init_sensors(void)
 
 static int hw_init_rtc(void)
 {
-
     if (!device_is_ready(ds3231)) {
         LOG_ERR("[RTC] DS3231 not ready!");
         return -ENODEV;
@@ -271,7 +282,38 @@ static int hw_init_rtc(void)
                 (uint32_t)sp.rtc.tv_sec);
         rtc_time_valid = true;
     } else {
-        LOG_WRN("[RTC] oscillator stopped — time invalid, needs provisioning");
+        LOG_WRN("[RTC] oscillator stopped — time invalid, attempting provisioning...");
+
+    #if CONFIG_LIMA_PROVISION_UNIX_TIME != 0
+        struct sys_notify notify;
+        sys_notify_init_spinwait(&notify);
+
+        struct maxim_ds3231_syncpoint sp_set = {
+            .rtc.tv_sec  = CONFIG_LIMA_PROVISION_UNIX_TIME,
+            .rtc.tv_nsec = 0,
+            .syncclock   = maxim_ds3231_read_syncclock(ds3231),
+        };
+        sp_set.syncclock = maxim_ds3231_read_syncclock(ds3231);
+        
+        int set_ret = maxim_ds3231_set(ds3231, &sp_set, &notify);
+        if (set_ret == 0) {
+            int result;
+            while (sys_notify_fetch_result(&notify, &result) == -EAGAIN) {
+                k_yield();
+            }
+            if (result == 0) {
+                LOG_INF("[RTC] time provisioned: %u from Kconfig",
+                        CONFIG_LIMA_PROVISION_UNIX_TIME);
+                rtc_time_valid = true;
+            } else {
+                LOG_ERR("[RTC] set completed with error (%d)", result);
+            }
+        } else {
+            LOG_ERR("[RTC] failed to set time (%d)", set_ret);
+        }
+    #else
+        LOG_WRN("[RTC] no provisioning value set — deep sleep alarm disabled");
+    #endif
     }
 
     /* Raw GPIO interrupt on INT/SQW pin — bypasses counter driver */
@@ -476,6 +518,8 @@ static void hw_watchdog_init(void)
         LOG_ERR("WDT: setup failed (%d)", ret);
         return;
     }
+    
+    k_work_init_delayable(&rtc_fallback_work, rtc_fallback_cb);
 
     LOG_INF("WDT: armed — 30s timeout, SOC reset on expiry");
     fsm_hw_wdt_kick();
@@ -517,6 +561,8 @@ void fsm_hw_enter_deep_sleep(void)
     }
     if (!rtc_time_valid) {
         LOG_WRN("[RTC] time not provisioned — falling back to k_work timer for wakeup");
+        k_work_reschedule(&rtc_fallback_work,
+                    K_MSEC(CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS));
         return;
     }
 
