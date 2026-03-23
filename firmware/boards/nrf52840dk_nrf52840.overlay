@@ -16,6 +16,13 @@
         smplrt-div = <0>;
     };
 
+    ds3231: ds3231@68 {
+        compatible = "maxim,ds3231";
+        reg = <0x68>;
+        isw-gpios = <&gpio0 28 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+        status = "okay";
+    };
+
     bme280: bme280@76 {
         compatible = "bosch,bme280";
         reg = <0x76>;
