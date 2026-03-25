@@ -63,19 +63,22 @@ static const struct gpio_dt_spec rtc_int = GPIO_DT_SPEC_GET(DT_NODELABEL(ds3231)
 
 /* ── Settings helpers ───────────────────────────────────────────────────── */
 
-static int rtc_settings_read_epoch(uint32_t *out)
+static uint32_t nvs_epoch_loaded = 0;
+
+static int rtc_settings_set(const char *key, size_t len,
+                             settings_read_cb read_cb, void *cb_arg)
 {
-    if (out == NULL) return -EINVAL;
-
-    int rc = settings_runtime_get(LIMA_RTC_SETTINGS_KEY, out, sizeof(*out));
-    if (rc <= 0) {
-        LOG_WRN("[RTC] Settings: no saved epoch (rc=%d)", rc);
-        return -ENOENT;
+    if (strcmp(key, "epoch") == 0 && len == sizeof(uint32_t)) {
+        read_cb(cb_arg, &nvs_epoch_loaded, sizeof(nvs_epoch_loaded));
+        LOG_INF("[RTC] Settings: loaded epoch %u", nvs_epoch_loaded);
     }
-
-    LOG_INF("[RTC] Settings: loaded epoch %u", *out);
     return 0;
 }
+
+static struct settings_handler rtc_settings_handler = {
+    .name  = "lima",
+    .h_set = rtc_settings_set,
+};
 
 static int rtc_settings_write_epoch(uint32_t epoch)
 {
@@ -267,7 +270,11 @@ int lima_rtc_init(void)
     LOG_INF("[RTC] INT/SQW GPIO armed on P0.%d", rtc_int.pin);
 
     /* ── 1. Read epoch from Settings (already mounted by settings_load()) ── */
-    nvs_ok = (rtc_settings_read_epoch(&nvs_epoch) == 0);
+    nvs_epoch_loaded = 0;
+    settings_register(&rtc_settings_handler);
+    settings_load_subtree("lima");
+    nvs_ok    = (nvs_epoch_loaded > 0);
+    nvs_epoch = nvs_epoch_loaded;
 
     /* ── 2. Read DS3231 ───────────────────────────────────────────────── */
     if (!device_is_ready(ds3231)) {
