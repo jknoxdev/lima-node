@@ -305,6 +305,14 @@ int lima_rtc_init(void)
     nvs_ok    = (nvs_epoch_loaded > 0);
     nvs_epoch = nvs_epoch_loaded;
 
+    /* ── Force-provision override (make provision target only) ───────────── */
+    #if CONFIG_LIMA_FORCE_PROVISION && CONFIG_LIMA_PROVISION_UNIX_TIME != 0
+        LOG_WRN("[RTC] FORCE PROVISION: overwriting epoch %u → %u",
+                boot_epoch, CONFIG_LIMA_PROVISION_UNIX_TIME);
+        lima_rtc_set_epoch(CONFIG_LIMA_PROVISION_UNIX_TIME);
+        ret = LIMA_RTC_OK;
+    #endif
+
     /* ── 2. Read DS3231 ───────────────────────────────────────────────── */
     if (!device_is_ready(ds3231)) {
         LOG_ERR("[RTC] DS3231 not ready — skipping hardware read");

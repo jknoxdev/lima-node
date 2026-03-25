@@ -42,6 +42,7 @@ archive-logs:
 
 provision:
 	$(WEST) build -b $(BOARD) lima-node/firmware --build-dir $(BUILD_DIR) --pristine \
-		-- -DCONFIG_LIMA_PROVISION_UNIX_TIME=$(shell date +%s)
+		-- -DCONFIG_LIMA_PROVISION_UNIX_TIME=$(shell date +%s) \
+		-DCONFIG_LIMA_FORCE_PROVISION=y
 	$(WEST) flash --runner jlink --build-dir $(BUILD_DIR)
 	tio -l --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log /dev/ttyACM0
