@@ -26,8 +26,6 @@
 #include <zephyr/kernel/thread.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
-#include <zephyr/drivers/counter.h>
-#include <zephyr/drivers/rtc/maxim_ds3231.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/bluetooth/bluetooth.h>
@@ -40,6 +38,7 @@
 #include "events.h"
 #include "fsm.h"
 #include "crypto.h"
+#include "rtc.h"
 
 LOG_MODULE_REGISTER(lima_main, LOG_LEVEL_INF);
 
@@ -64,8 +63,6 @@ LOG_MODULE_REGISTER(lima_main, LOG_LEVEL_INF);
 #define MOTION_THRESHOLD_G      0.80     /* 1.1 good for table top     */
 #define FSM_STACK_SIZE          8192  // Double it again
 #define SENSOR_STACK_SIZE       4096  // Double it again
-#define LIMA_NVS_PROVISION_TIME_ID  2   /* key ID, after crypto key at 1 */
-
 
 
 /* ── Hardware globals ────────────────────────────────────────────────────── */
@@ -89,12 +86,6 @@ static uint8_t sleep_led_on = 0;
 static uint32_t sleep_led_interval_ms = 0;
 static uint8_t sleep_led_white = 0;  /* 1 = white pulse (deep), 0 = red+blue (light) */
 
-/* RTC */
-static const struct device *ds3231 = DEVICE_DT_GET(DT_NODELABEL(ds3231));
-static const struct gpio_dt_spec rtc_int = GPIO_DT_SPEC_GET(DT_NODELABEL(ds3231), isw_gpios);
-static bool rtc_time_valid = false;
-static struct k_work_delayable rtc_fallback_work;
-struct sys_notify notify;
 
 /* I2C prototype */
 static void hw_i2c_bus_recovery(void);
@@ -164,40 +155,6 @@ static void wdt_keepalive_cb(struct k_timer *t) {
 }
 K_TIMER_DEFINE(wdt_keepalive_timer, wdt_keepalive_cb, NULL);
 
-/* ── RTC ─────────────────────────────────────────────────────────────────── */
-
-static void rtc_alarm_cb(const struct device *dev,
-                          uint8_t chan_id,
-                          uint32_t ticks,
-                          void *user_data)
-{
-    ARG_UNUSED(dev);
-    ARG_UNUSED(chan_id);
-    ARG_UNUSED(ticks);
-    ARG_UNUSED(user_data);
-
-    lima_event_t e = {
-        .type         = LIMA_EVT_RTC_WAKEUP,
-        .timestamp_ms = k_uptime_get_32(),
-    };
-    k_msgq_put(&fsm_msgq, &e, K_NO_WAIT);
-}
-
-static struct gpio_callback rtc_gpio_cb_data;
-
-static void rtc_gpio_cb(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
-{
-    LOG_INF("[RTC] INT/SQW GPIO fired on P0.%d!", rtc_int.pin);
-}
-
-static void rtc_fallback_cb(struct k_work *work) {
-    lima_event_t e = {
-        .type         = LIMA_EVT_RTC_WAKEUP,
-        .timestamp_ms = k_uptime_get_32(),
-    };
-    lima_post_event(&e);
-}
-
 
 /* ── Node identity ───────────────────────────────────────────────────────── */
 
@@ -251,86 +208,6 @@ static int hw_init_sensors(void)
     LOG_INF("BME280 ready");
     return 0;
 }
-
-static int hw_init_rtc(void)
-{
-    if (!device_is_ready(ds3231)) {
-        LOG_ERR("[RTC] DS3231 not ready!");
-        return -ENODEV;
-    }
-    LOG_INF("[RTC] DS3231 ready");
-
-    counter_cancel_channel_alarm(ds3231, 0);
-    
-    /* Clear DS3231 alarm flags */
-    const struct device *i2c = DEVICE_DT_GET(DT_NODELABEL(i2c0));
-    uint8_t buf[2] = {0x0F, 0x00};
-    i2c_write(i2c, buf, sizeof(buf), 0x68);
-    LOG_INF("[RTC] alarm flags cleared");
-
-    int ret = counter_start(ds3231);
-    if (ret < 0 && ret != -EALREADY) {
-        LOG_ERR("[RTC] counter_start failed (%d)", ret);
-        return ret;
-    }
-
-    struct maxim_ds3231_syncpoint sp = { 0 };
-
-    ret = maxim_ds3231_get_syncpoint(ds3231, &sp);
-    if (ret == 0) {
-        LOG_INF("[RTC] time valid: %u seconds since epoch",
-                (uint32_t)sp.rtc.tv_sec);
-        rtc_time_valid = true;
-    } else {
-        LOG_WRN("[RTC] oscillator stopped — time invalid, attempting provisioning...");
-
-    #if CONFIG_LIMA_PROVISION_UNIX_TIME != 0
-        struct sys_notify notify;
-        sys_notify_init_spinwait(&notify);
-
-        struct maxim_ds3231_syncpoint sp_set = {
-            .rtc.tv_sec  = CONFIG_LIMA_PROVISION_UNIX_TIME,
-            .rtc.tv_nsec = 0,
-            .syncclock   = maxim_ds3231_read_syncclock(ds3231),
-        };
-        sp_set.syncclock = maxim_ds3231_read_syncclock(ds3231);
-        
-        int set_ret = maxim_ds3231_set(ds3231, &sp_set, &notify);
-        if (set_ret == 0) {
-            int result;
-            while (sys_notify_fetch_result(&notify, &result) == -EAGAIN) {
-                k_yield();
-            }
-            if (result == 0) {
-                LOG_INF("[RTC] time provisioned: %u from Kconfig",
-                        CONFIG_LIMA_PROVISION_UNIX_TIME);
-                rtc_time_valid = true;
-            } else {
-                LOG_ERR("[RTC] set completed with error (%d)", result);
-            }
-        } else {
-            LOG_ERR("[RTC] failed to set time (%d)", set_ret);
-        }
-    #else
-        LOG_WRN("[RTC] no provisioning value set — deep sleep alarm disabled");
-    #endif
-    }
-
-    /* Raw GPIO interrupt on INT/SQW pin — bypasses counter driver */
-    if (!gpio_is_ready_dt(&rtc_int)) {
-        LOG_ERR("[RTC] INT/SQW GPIO not ready!");
-        return -ENODEV;
-    }
-    gpio_pin_configure_dt(&rtc_int, GPIO_INPUT);
-    gpio_pin_interrupt_configure_dt(&rtc_int, GPIO_INT_EDGE_FALLING);
-    gpio_init_callback(&rtc_gpio_cb_data, rtc_gpio_cb, BIT(rtc_int.pin));
-    gpio_add_callback(rtc_int.port, &rtc_gpio_cb_data);
-    LOG_INF("[RTC] GPIO interrupt armed on P0.%d", rtc_int.pin);
-
-    LOG_INF("[RTC] initialized — counter running, stale alarms cleared");
-    return 0;
-}
-
 
 static double hw_read_imu(void)
 {
@@ -451,15 +328,6 @@ static int hw_enter_light_sleep(void)
     return 0;
 }
 
-static int hw_enter_deep_sleep(void)
-{
-    LOG_INF("[SLEEP] deep sleep active — waiting for RTC wakeup event");
-    // TODO: real PM_STATE_SOFT_OFF goes here
-    // Duration owned by RTC wakeup timer (future) or manual wakeup event
-
-    return 0;
-}
-
 static int hw_sign_event(lima_event_t *e)
 {
     LOG_INF("[STUB] sign_event type=0x%02X", e->type);
@@ -519,7 +387,7 @@ static void hw_watchdog_init(void)
         return;
     }
     
-    k_work_init_delayable(&rtc_fallback_work, rtc_fallback_cb);
+    // k_work_init_delayable(&rtc_fallback_work, rtc_fallback_cb);
 
     LOG_INF("WDT: armed — 30s timeout, SOC reset on expiry");
     fsm_hw_wdt_kick();
@@ -552,38 +420,8 @@ void fsm_hw_enter_sleep(void)
 
 void fsm_hw_enter_deep_sleep(void)
 {
-    hw_enter_deep_sleep();
+    lima_rtc_arm_wakeup(CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS);
     hw_ble_stop();
-
-    if (!device_is_ready(ds3231)) {
-        LOG_ERR("[RTC] DS3231 not ready!");
-        return;
-    }
-    if (!rtc_time_valid) {
-        LOG_WRN("[RTC] time not provisioned — falling back to k_work timer for wakeup");
-        k_work_reschedule(&rtc_fallback_work,
-                    K_MSEC(CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS));
-        return;
-    }
-
-    uint32_t now = 0;
-    counter_get_value(ds3231, &now);
-
-    uint32_t interval = counter_us_to_ticks(ds3231,
-                            (uint64_t)CONFIG_LIMA_DEEP_SLEEP_INTERVAL_MS * 1000ULL);
-
-    LOG_INF("[RTC] now: %u ticks, alarm in %u ticks, firing at %u",
-            now, interval, now + interval);
-
-    struct counter_alarm_cfg alarm = {
-        .callback  = rtc_alarm_cb,
-        .ticks     = now + interval,
-        .user_data = NULL,
-        .flags     = COUNTER_ALARM_CFG_ABSOLUTE,
-    };
-
-    int ret = counter_set_channel_alarm(ds3231, 0, &alarm);
-    LOG_INF("[RTC] alarm armed: %d (0=ok)", ret);
 }
 
 /**
@@ -683,7 +521,7 @@ static void sensor_thread_fn(void *p1, void *p2, void *p3)
             LOG_INF("MOTION: %.2f g (threshold=%.2f)", magnitude, MOTION_THRESHOLD_G);
             lima_event_t e = {
                 .type             = LIMA_EVT_MOTION_DETECTED,
-                .timestamp_ms     = k_uptime_get_32(),
+                .timestamp_ms     = (uint32_t)lima_rtc_timestamp_ms(),
                 .data.imu.accel_g = (float)magnitude,
             };
             lima_post_event(&e);
@@ -766,17 +604,27 @@ int main(void)
         LOG_ERR("Sensor init failed!");
         // post SENSOR_FAULT event or spin
     }
-    if (hw_init_rtc() != 0) {
-        LOG_ERR("[RTC] init failed!");
+    settings_load();
+
+    int rtc_ret = lima_rtc_init();
+    if (rtc_ret == LIMA_RTC_ERR_SKEW) {
+        LOG_WRN("[RTC] skew detected — posting tamper event");
+        lima_event_t e = {
+            .type         = LIMA_EVT_TAMPER_DETECTED,
+            .timestamp_ms = (uint32_t)lima_rtc_timestamp_ms(),
+        };
+        lima_post_event(&e);
+    } else if (rtc_ret != LIMA_RTC_OK && rtc_ret != LIMA_RTC_ERR_FALLBACK) {
+        LOG_ERR("[RTC] init failed (%d)", rtc_ret);
     }
-    
+
     for (int i = 0; i < 6; i++) {
         LOG_INF("USB settle: %d/6 - start sleep", i + 1);
         k_msleep(1000);
         LOG_INF("USB settle: %d/6 - done", i + 1);
     }
 
-    settings_load();
+
     
     if (lima_crypto_init() != 0) {
         LOG_ERR("Crypto init failed — signing unavailable");

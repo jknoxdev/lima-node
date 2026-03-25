@@ -41,3 +41,7 @@ config LIMA_BLE_ADV_DURATION_MS
 config LIMA_PROVISION_UNIX_TIME
     int "RTC provisioning timestamp (Unix epoch, 0 = disabled)"
     default 0
+
+config LIMA_RTC_LOG_LEVEL
+    int "LIMA RTC log level"
+    default 3

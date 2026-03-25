@@ -12,6 +12,7 @@
 #include "fsm.h"
 #include "crypto.h"
 #include "ble.h"
+#include "rtc.h"
 
 LOG_MODULE_REGISTER(lima_fsm, LOG_LEVEL_INF);
 
@@ -352,9 +353,12 @@ static void state_deep_sleep_handle(const lima_event_t *evt)
 
 static void state_event_detected_enter(void)
 {
-    LOG_INF("EVENT DETECTED: type=0x%02X at t=%u ms",
+    char tsbuf[32];
+    lima_rtc_format_now(tsbuf, sizeof(tsbuf));
+    LOG_INF("EVENT DETECTED: type=0x%02X at t=%u ms | %s",
             fsm.last_event.type,
-            fsm.last_event.timestamp_ms);
+            fsm.last_event.timestamp_ms,
+            tsbuf);
 
     // /* Kick off async signing; stub posts SIGNING_COMPLETE synchronously */
     // lima_event_t e = {

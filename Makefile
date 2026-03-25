@@ -39,3 +39,9 @@ archive-logs:
 	else \
 		echo "No logs to archive"; \
 	fi
+
+provision:
+	$(WEST) build -b $(BOARD) lima-node/firmware --build-dir $(BUILD_DIR) --pristine \
+		-- -DCONFIG_LIMA_PROVISION_UNIX_TIME=$(shell date +%s)
+	$(WEST) flash --runner jlink --build-dir $(BUILD_DIR)
+	tio -l --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log /dev/ttyACM0
