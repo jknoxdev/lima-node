@@ -65,7 +65,12 @@ extern "C" {
  */
 #define LIMA_RTC_NVS_FLUSH_MS       60000U
 
+/** Format current wall-clock time into buf as "YYYY-MM-DD HH:MM:SS UTC" */
+void lima_rtc_format_now(char *buf, size_t len);
+
 /* ── Public API ───────────────────────────────────────────────────────────── */
+
+
 
 /**
  * @brief  Initialise the RTC subsystem.

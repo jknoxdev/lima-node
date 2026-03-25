@@ -86,8 +86,6 @@ static uint8_t sleep_led_on = 0;
 static uint32_t sleep_led_interval_ms = 0;
 static uint8_t sleep_led_white = 0;  /* 1 = white pulse (deep), 0 = red+blue (light) */
 
-/* RTC */
-static const struct gpio_dt_spec rtc_int = GPIO_DT_SPEC_GET(DT_NODELABEL(ds3231), isw_gpios);
 
 /* I2C prototype */
 static void hw_i2c_bus_recovery(void);
@@ -156,15 +154,6 @@ static void wdt_keepalive_cb(struct k_timer *t) {
     fsm_hw_wdt_kick();
 }
 K_TIMER_DEFINE(wdt_keepalive_timer, wdt_keepalive_cb, NULL);
-
-/* ── RTC ─────────────────────────────────────────────────────────────────── */
-
-static struct gpio_callback rtc_gpio_cb_data;
-
-static void rtc_gpio_cb(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
-{
-    LOG_INF("[RTC] INT/SQW GPIO fired on P0.%d!", rtc_int.pin);
-}
 
 
 /* ── Node identity ───────────────────────────────────────────────────────── */
@@ -532,7 +521,7 @@ static void sensor_thread_fn(void *p1, void *p2, void *p3)
             LOG_INF("MOTION: %.2f g (threshold=%.2f)", magnitude, MOTION_THRESHOLD_G);
             lima_event_t e = {
                 .type             = LIMA_EVT_MOTION_DETECTED,
-                .timestamp_ms     = k_uptime_get_32(),
+                .timestamp_ms     = (uint32_t)lima_rtc_timestamp_ms(),
                 .data.imu.accel_g = (float)magnitude,
             };
             lima_post_event(&e);
@@ -629,17 +618,6 @@ int main(void)
         LOG_ERR("[RTC] init failed (%d)", rtc_ret);
     }
 
-    /* Wire INT/SQW GPIO interrupt — future tamper hook */
-    gpio_pin_configure_dt(&rtc_int, GPIO_INPUT);
-    gpio_pin_interrupt_configure_dt(&rtc_int, GPIO_INT_EDGE_FALLING);
-    gpio_init_callback(&rtc_gpio_cb_data, rtc_gpio_cb, BIT(rtc_int.pin));
-    gpio_add_callback(rtc_int.port, &rtc_gpio_cb_data);
-    LOG_INF("[RTC] INT/SQW GPIO armed on P0.%d", rtc_int.pin);
-
-    if (lima_rtc_init() != 0) {
-        LOG_ERR("[RTC] init failed!");
-    }
-    
     for (int i = 0; i < 6; i++) {
         LOG_INF("USB settle: %d/6 - start sleep", i + 1);
         k_msleep(1000);

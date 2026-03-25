@@ -27,6 +27,7 @@
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/notify.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
 #include "rtc.h"
 #include "events.h"   /* lima_event_t, LIMA_EVT_RTC_WAKEUP */
 
@@ -54,6 +55,11 @@ static struct k_work_delayable nvs_flush_work;
 
 /* Forward-declared for wakeup fallback */
 extern int lima_post_event(const lima_event_t *evt);
+
+/* RTC */
+static const struct gpio_dt_spec rtc_int = GPIO_DT_SPEC_GET(DT_NODELABEL(ds3231), isw_gpios);
+
+
 
 /* ── Settings helpers ───────────────────────────────────────────────────── */
 
@@ -110,17 +116,22 @@ static int rtc_hw_read(uint32_t *out)
         return -ENODEV;
     }
 
-    struct maxim_ds3231_syncpoint sp = { 0 };
-    int rc = maxim_ds3231_get_syncpoint(ds3231, &sp);
+    uint32_t ticks = 0;
+    // int rc = maxim_ds3231_get_syncpoint(ds3231, &sp);
+    int rc = counter_get_value(ds3231, &ticks);
     if (rc != 0) {
-        LOG_WRN("[RTC] DS3231 get_syncpoint failed (%d) — oscillator stopped?", rc);
+        LOG_WRN("[RTC] DS3231 get_syncpoint failed (%d)", rc);
         return rc;
     }
 
-    *out = (uint32_t)sp.rtc.tv_sec;
+    // *out = (uint32_t)sp.rtc.tv_sec;
+    *out = ticks;
     LOG_INF("[RTC] DS3231 read: %u", *out);
     return 0;
 }
+
+
+
 
 /**
  * @brief Write epoch to DS3231 hardware.
@@ -195,6 +206,49 @@ static void rtc_fallback_fn(struct k_work *work)
     lima_post_event(&e);
 }
 
+/* ── RTC ─────────────────────────────────────────────────────────────────── */
+
+static struct gpio_callback rtc_gpio_cb_data;
+
+static void rtc_gpio_cb(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+    LOG_INF("[RTC] INT/SQW GPIO fired on P0.%d!", rtc_int.pin);
+}
+
+/* ── Human time ───────────────────────────────────────────────────────────── */
+
+void lima_rtc_format_now(char *buf, size_t len)
+{
+    uint32_t epoch = lima_rtc_get_epoch();
+    if (epoch == 0) {
+        snprintk(buf, len, "epoch not set (uptime=%u ms)",
+                 k_uptime_get_32());
+        return;
+    }
+    /* Manual UTC breakdown — no POSIX dependency */
+    uint32_t s = epoch % 60;   epoch /= 60;
+    uint32_t m = epoch % 60;   epoch /= 60;
+    uint32_t h = epoch % 24;   epoch /= 24;
+    /* Days since 1970-01-01 → Gregorian */
+    uint32_t days = epoch;
+    uint32_t y = 1970;
+    while (1) {
+        uint32_t dy = ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) ? 366 : 365;
+        if (days < dy) break;
+        days -= dy; y++;
+    }
+    static const uint8_t dim[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    uint32_t mo = 0;
+    bool leap = ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0);
+    while (1) {
+        uint32_t dm = (mo == 1 && leap) ? 29 : dim[mo];
+        if (days < dm) break;
+        days -= dm; mo++;
+    }
+    snprintk(buf, len, "%04u-%02u-%02u %02u:%02u:%02u UTC",
+             y, mo + 1, days + 1, h, m, s);
+}
+
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 int lima_rtc_init(void)
@@ -204,6 +258,13 @@ int lima_rtc_init(void)
     uint32_t nvs_epoch    = 0;
     bool     hw_ok        = false;
     bool     nvs_ok       = false;
+
+    /* Wire INT/SQW GPIO interrupt — future tamper hook */
+    gpio_pin_configure_dt(&rtc_int, GPIO_INPUT);
+    gpio_pin_interrupt_configure_dt(&rtc_int, GPIO_INT_EDGE_FALLING);
+    gpio_init_callback(&rtc_gpio_cb_data, rtc_gpio_cb, BIT(rtc_int.pin));
+    gpio_add_callback(rtc_int.port, &rtc_gpio_cb_data);
+    LOG_INF("[RTC] INT/SQW GPIO armed on P0.%d", rtc_int.pin);
 
     /* ── 1. Read epoch from Settings (already mounted by settings_load()) ── */
     nvs_ok = (rtc_settings_read_epoch(&nvs_epoch) == 0);
@@ -257,9 +318,7 @@ int lima_rtc_init(void)
         /* Best-effort: write NVS epoch back to DS3231 to resync hardware */
         rtc_hw_write(boot_epoch);
         rtc_settings_write_epoch(boot_epoch);
-
-    } else if (IS_ENABLED(CONFIG_LIMA_PROVISION_UNIX_TIME) &&
-               CONFIG_LIMA_PROVISION_UNIX_TIME != 0) {
+    } else if (CONFIG_LIMA_PROVISION_UNIX_TIME != 0) {
         boot_epoch = CONFIG_LIMA_PROVISION_UNIX_TIME;
         rtc_valid  = false;   /* Kconfig bake-in is not authoritative */
         ret        = LIMA_RTC_ERR_FALLBACK;
