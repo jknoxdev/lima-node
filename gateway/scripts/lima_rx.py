@@ -30,15 +30,16 @@ def zephyr_hexdump(data: bytes, indent: str = "                                 
     return "\n".join(lines)
 
 def parse_adv_payload(data: bytes) -> dict:
-    # adv_payload layout (inferred — update once ble.c confirmed):
-    # [0]    event_type  uint8
-    # [1]    version/pad uint8
-    # [2-5]  sequence    uint32 LE
-    # [6-9]  timestamp   uint32 LE (ms)
-    # [10-13] accel_g    float32 LE
-    # [14-17] delta_pa   float32 LE
-    # [18-23] node_id    uint8[6]
-    evt       = data[0]
+    # adv_payload layout — confirmed against ble.h (company_id stripped by bleak):
+    # [0]     proto_version  uint8  (0x02)
+    # [1]     event_type     uint8
+    # [2-5]   sequence       uint32 LE
+    # [6-9]   timestamp_ms   uint32 LE
+    # [10-13] accel_g        float32 LE
+    # [14-17] delta_pa       float32 LE
+    # [18-23] node_id        uint8[6]
+    # [24-87] sig            uint8[64]
+    evt       = data[1]   # was data[0] — that's proto_version
     seq       = struct.unpack_from("<I", data, 2)[0]
     ts_ms     = struct.unpack_from("<I", data, 6)[0]
     accel_g   = struct.unpack_from("<f", data, 10)[0]
@@ -49,7 +50,7 @@ def parse_adv_payload(data: bytes) -> dict:
                 delta_pa=delta_pa, node_str=node_str)
 
 def reconstruct_lima_payload(data: bytes) -> bytes:
-    evt_type = data[0]
+    evt_type = data[1]
     seq      = data[2:6]    # uint32 LE
     ts_ms    = data[6:10]   # uint32 LE
     accel    = data[10:14]  # float32 LE

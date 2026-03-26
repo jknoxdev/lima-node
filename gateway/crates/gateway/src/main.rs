@@ -14,7 +14,8 @@ use std::{
 };
 
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
-use btleplug::platform::Manager;
+use btleplug::platform::{Adapter, Manager};
+
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -52,7 +53,6 @@ const TEST_NODE_PUBKEY_HEX: &str = concat!(
 );
 
 const DB_PATH: &str = "lima_gateway.db";
-const LIMA_ADV_PREFIX: &str = "LIMA";
 
 // ── Event record ──────────────────────────────────────────────────────────────
 
@@ -66,14 +66,13 @@ struct EventRecord {
     raw_blob_hex: String,
 }
 
-
 // ── App state ─────────────────────────────────────────────────────────────────
 
 struct App {
-    events:      Vec<EventRecord>,
-    table_state: TableState,
-    total_rx:    u64,
-    total_valid: u64,
+    events:        Vec<EventRecord>,
+    table_state:   TableState,
+    total_rx:      u64,
+    total_valid:   u64,
     total_invalid: u64,
 }
 
@@ -137,45 +136,49 @@ fn db_insert(conn: &Connection, rec: &EventRecord) -> rusqlite::Result<i64> {
 
 fn load_test_verifying_key() -> VerifyingKey {
     let bytes = hex::decode(TEST_NODE_PUBKEY_HEX.replace(['\n', ' '], ""))
-    .expect("TEST_NODE_PUBKEY_HEX invalid hex");
+        .expect("TEST_NODE_PUBKEY_HEX invalid hex");
     VerifyingKey::from_sec1_bytes(&bytes)
         .expect("TEST_NODE_PUBKEY_HEX invalid P-256 key")
 }
 
-/// Wire format received (90 bytes):
-/// [company_id(2) | proto_ver(1) | event_type(1) | sequence(4) |
+/// Wire format on the wire (90 bytes total, per ble.h lima_adv_payload_t):
+/// [company_id(2) | proto_version(1) | event_type(1) | sequence(4) |
 ///  timestamp_ms(4) | accel_g(4) | delta_pa(4) | node_id(6) | sig(64)]
 ///
-/// Signed data is lima_payload_t (24 bytes):
+/// btleplug strips company_id into the HashMap key — buffer arrives as 88 bytes:
+/// [proto_version(1) | event_type(1) | sequence(4) | timestamp_ms(4) |
+///  accel_g(4) | delta_pa(4) | node_id(6) | sig(64)]
+///
+/// Signed data is lima_payload_t (24 bytes), reconstructed as firmware built it:
 /// [node_id(6) | event_type(1) | reserved(1) | sequence(4) |
 ///  timestamp_ms(4) | accel_g(4) | delta_pa(4)]
 fn verify_outer_sig(payload: &[u8], vk: &VerifyingKey) -> bool {
-    const ADV_LEN:     usize = 90;
-    const SIG_LEN:     usize = 64;
+    // 90 bytes on wire minus 2-byte company_id stripped by btleplug
+    const ADV_LEN:     usize = 88;
     const PAYLOAD_LEN: usize = 24;
 
     if payload.len() < ADV_LEN {
         return false;
     }
 
-    // Extract fields from ADV layout
-    let event_type   = payload[3];
-    let sequence     = &payload[4..8];
-    let timestamp_ms = &payload[8..12];
-    let accel_g      = &payload[12..16];
-    let delta_pa     = &payload[16..20];
-    let node_id      = &payload[20..26];
-    let sig_bytes    = &payload[26..90];
+    // Offsets after company_id strip — confirmed against ble.h
+    let event_type   = payload[1];
+    let sequence     = &payload[2..6];
+    let timestamp_ms = &payload[6..10];
+    let accel_g      = &payload[10..14];
+    let delta_pa     = &payload[14..18];
+    let node_id      = &payload[18..24];
+    let sig_bytes    = &payload[24..88];
 
-    // Reconstruct lima_payload_t layout (24 bytes) exactly as firmware built it
+    // Reconstruct lima_payload_t (24 bytes) exactly as firmware built it
     let mut signed_data = [0u8; PAYLOAD_LEN];
-    signed_data[0..6].copy_from_slice(node_id);       // node_id
-    signed_data[6]    = event_type;                    // event_type
-    signed_data[7]    = 0x00;                          // reserved
-    signed_data[8..12].copy_from_slice(sequence);      // sequence
-    signed_data[12..16].copy_from_slice(timestamp_ms); // timestamp_ms
-    signed_data[16..20].copy_from_slice(accel_g);      // accel_g
-    signed_data[20..24].copy_from_slice(delta_pa);     // delta_pa
+    signed_data[0..6].copy_from_slice(node_id);        // node_id
+    signed_data[6]    = event_type;                     // event_type
+    signed_data[7]    = 0x00;                           // reserved
+    signed_data[8..12].copy_from_slice(sequence);       // sequence
+    signed_data[12..16].copy_from_slice(timestamp_ms);  // timestamp_ms
+    signed_data[16..20].copy_from_slice(accel_g);       // accel_g
+    signed_data[20..24].copy_from_slice(delta_pa);      // delta_pa
 
     match Signature::from_slice(sig_bytes) {
         Ok(sig) => vk.verify(&signed_data, &sig).is_ok(),
@@ -236,7 +239,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         [
             Constraint::Length(12),  // time
             Constraint::Length(20),  // node_id
-            Constraint::Length(8),   // seqf
+            Constraint::Length(8),   // seq
             Constraint::Length(12),  // sig
             Constraint::Length(10),  // rssi
         ],
@@ -253,13 +256,13 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     // ── Footer ────────────────────────────────────────────────────────────────
     let last_sig = app.events.first()
-    .map(|e| format!(
-        "{}  {}",
-        if e.sig_verified { "✓ VALID" } else { "✗ INVALID" },
-        e.raw_blob_hex.chars().take(8).collect::<String>()
-    ))
-    .unwrap_or_else(|| "--".to_string());
-        
+        .map(|e| format!(
+            "{}  {}",
+            if e.sig_verified { "✓ VALID" } else { "✗ INVALID" },
+            e.raw_blob_hex.chars().take(8).collect::<String>()
+        ))
+        .unwrap_or_else(|| "--".to_string());
+
     let footer_title = format!(
         " q: quit  |  DB: {}  |  last sig: {}...  |  skeleton: no AES decrypt yet ",
         DB_PATH,
@@ -281,40 +284,50 @@ fn format_timestamp(ts_ms: u64) -> String {
     format!("{:02}:{:02}:{:02}", h, m, s)
 }
 
+// ── BLE task ──────────────────────────────────────────────────────────────────
 async fn ble_task(
-    app: Arc<Mutex<App>>,
-    conn: Arc<Mutex<Connection>>,
-    vk: Arc<VerifyingKey>,
+    app:     Arc<Mutex<App>>,
+    conn:    Arc<Mutex<Connection>>,
+    vk:      Arc<VerifyingKey>,
+    adapter: Adapter,
 ) {
-    let manager  = Manager::new().await.expect("BLE manager failed");
-    let adapters = manager.adapters().await.expect("No BLE adapters");
-    let adapter  = adapters.into_iter().next().expect("No BLE adapter found");
-
     adapter.start_scan(ScanFilter::default()).await
         .expect("BLE scan failed");
+
+    // Deduplicate — track recently seen blobs to avoid re-inserting cached peripherals
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     loop {
         let peripherals = adapter.peripherals().await.unwrap_or_default();
 
-            for p in peripherals {
-                let props = match p.properties().await {
-                    Ok(Some(p)) => p,
-                    _ => continue,
-                };
+        for p in peripherals {
+            let props = match p.properties().await {
+                Ok(Some(p)) => p,
+                _ => continue,
+            };
 
-            let is_lima = props.manufacturer_data
-                .contains_key(&0xFFFF);
-                if !is_lima {
-                    continue;
-                }
+            // Filter to LIMA manufacturer ID (0xFFFF)
+            if !props.manufacturer_data.contains_key(&0xFFFF) {
+                continue;
+            }
 
             let node_id = props.address.to_string();
-            let rssi = props.rssi.unwrap_or(0) as i8;
+            let rssi    = props.rssi.unwrap_or(0) as i8;
 
             for (_, bytes) in &props.manufacturer_data {
-                let sig_verified = verify_outer_sig(bytes, &vk);
                 let raw_blob_hex = hex::encode(bytes);
 
+                // Skip if already processed this exact payload
+                if seen.contains(&raw_blob_hex) {
+                    continue;
+                }
+                seen.insert(raw_blob_hex.clone());
+                // Cap seen set to avoid unbounded growth
+                if seen.len() > 500 {
+                    seen.clear();
+                }
+
+                let sig_verified = verify_outer_sig(bytes, &vk);
 
                 let received_at = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -353,6 +366,40 @@ async fn ble_task(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    // ── BLE adapter discovery (before TUI — output visible in terminal) ───────
+    eprintln!("[LIMA] Scanning for BLE adapters...");
+    let manager  = Manager::new().await.expect("BLE manager failed");
+    let adapters = manager.adapters().await.expect("Failed to list BLE adapters");
+
+    if adapters.is_empty() {
+        eprintln!("[LIMA] ERROR: no BLE adapters found.");
+        eprintln!("[LIMA] Check: sudo systemctl status bluetooth");
+        eprintln!("[LIMA] Check: sudo setcap 'cap_net_raw,cap_net_admin+eip' target/debug/gateway");
+        std::process::exit(1);
+    }
+
+    let mut adapter_infos = Vec::new();
+    for (i, a) in adapters.iter().enumerate() {
+        let info = a.adapter_info().await.unwrap_or_else(|_| "unknown".to_string());
+        eprintln!("[LIMA]   adapter {}: {}", i, info);
+        adapter_infos.push(info);
+    }
+
+    // Prefer hci1 (ASUS BT500 — required for BLE 5.0 extended adv)
+    // hci0 is onboard Cypress chip, cannot receive extended advertisements
+    let adapter_idx = adapter_infos.iter()
+        .position(|info| info.contains("hci1"))
+        .unwrap_or_else(|| {
+            eprintln!("[LIMA] WARNING: hci1 not found, falling back to adapter 0");
+            0
+        });
+
+    let adapter = adapters.into_iter().nth(adapter_idx)
+        .expect("No BLE adapter found");
+
+    eprintln!("[LIMA] Using adapter {}: {}", adapter_idx, adapter_infos[adapter_idx]);
+
     // ── DB init ───────────────────────────────────────────────────────────────
     let conn = Connection::open(DB_PATH)?;
     db_init(&conn)?;
@@ -364,18 +411,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── App state ─────────────────────────────────────────────────────────────
     let app = Arc::new(Mutex::new(App::new()));
 
+    // ── Spawn BLE task with selected adapter ──────────────────────────────────
     tokio::spawn(ble_task(
-    Arc::clone(&app),
-    Arc::clone(&conn),
-    Arc::clone(&verifying_key),
+        Arc::clone(&app),
+        Arc::clone(&conn),
+        Arc::clone(&verifying_key),
+        adapter,
     ));
-   
 
     // ── TUI setup ─────────────────────────────────────────────────────────────
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend  = CrosstermBackend::new(stdout);
+    let backend      = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // ── TUI event loop ────────────────────────────────────────────────────────
