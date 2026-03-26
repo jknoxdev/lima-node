@@ -532,7 +532,7 @@ static void sensor_thread_fn(void *p1, void *p2, void *p3)
             LOG_INF("BARO: delta=%.2f Pa (threshold=%d)", (double)delta_pa, CONFIG_LIMA_BARO_THRESHOLD_PA);
             lima_event_t e = {
                 .type               = LIMA_EVT_PRESSURE_BREACH,
-                .timestamp_ms       = k_uptime_get_32(),
+                .timestamp_ms = (uint32_t)(lima_rtc_timestamp_ms() / 1000),
                 .data.baro.delta_pa = delta_pa,
             };
             lima_post_event(&e);

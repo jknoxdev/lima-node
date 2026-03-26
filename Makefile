@@ -46,3 +46,4 @@ provision:
 		-DCONFIG_LIMA_FORCE_PROVISION=y
 	$(WEST) flash --runner jlink --build-dir $(BUILD_DIR)
 	tio -l --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log /dev/ttyACM0
+
