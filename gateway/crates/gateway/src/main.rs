@@ -210,24 +210,48 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(header, chunks[0]);
 
     // ── Event table ───────────────────────────────────────────────────────────
-    let header_cells = ["time", "node_id", "seq", "sig", "rssi"]
+    let header_cells = ["time", "node_id", "evt", "seq", "sig", "rssi"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
     let table_header = Row::new(header_cells).height(1).bottom_margin(1);
 
     let rows = app.events.iter().map(|rec| {
-        let sig_cell = if rec.sig_verified {
-            Cell::from("✅ VALID").style(Style::default().fg(Color::Green))
+        // Parse evt, seq, sig fingerprint from raw bytes
+        // Offsets confirmed against ble.h (company_id stripped by btleplug):
+        // [0] proto_version  [1] event_type  [2..6] sequence  [24..88] sig
+        let raw = hex::decode(&rec.raw_blob_hex).unwrap_or_default();
+
+        let evt = raw.get(1)
+            .map(|b| format!("0x{:02X}", b))
+            .unwrap_or_else(|| "?".to_string());
+
+        let seq = if raw.len() >= 6 {
+            u32::from_le_bytes([raw[2], raw[3], raw[4], raw[5]]).to_string()
         } else {
-            Cell::from("❌ INVALID").style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            "?".to_string()
         };
 
-        let time_str = format_timestamp(rec.received_at);
+        let sig_fp = if raw.len() >= 28 {
+            // sig starts at offset 24 — show first 4 bytes as fingerprint
+            format!("{:02X}{:02X}{:02X}{:02X}",
+                raw[24], raw[25], raw[26], raw[27])
+        } else {
+            "?".to_string()
+        };
+
+        let sig_cell = if rec.sig_verified {
+            Cell::from(format!("✅ {}", sig_fp))
+                .style(Style::default().fg(Color::Green))
+        } else {
+            Cell::from(format!("❌ {}", sig_fp))
+                .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+        };
 
         Row::new(vec![
-            Cell::from(time_str),
+            Cell::from(format_timestamp(rec.received_at)),
             Cell::from(rec.node_id.clone()),
-            Cell::from("—"),   // seq: not decoded until AES decrypt sprint
+            Cell::from(evt),
+            Cell::from(seq),
             sig_cell,
             Cell::from(format!("{} dBm", rec.rssi)),
         ])
@@ -237,10 +261,11 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(12),  // time
+            Constraint::Length(10),  // time
             Constraint::Length(20),  // node_id
-            Constraint::Length(8),   // seq
-            Constraint::Length(12),  // sig
+            Constraint::Length(8),   // evt
+            Constraint::Length(6),   // seq
+            Constraint::Length(16),  // sig fingerprint
             Constraint::Length(10),  // rssi
         ],
     )
@@ -255,18 +280,25 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_stateful_widget(table, chunks[1], &mut app.table_state);
 
     // ── Footer ────────────────────────────────────────────────────────────────
-    let last_sig = app.events.first()
-        .map(|e| format!(
-            "{}  {}",
+    let last = app.events.first().map(|e| {
+        let raw = hex::decode(&e.raw_blob_hex).unwrap_or_default();
+        let sig_fp = if raw.len() >= 28 {
+            format!("{:02X}{:02X}{:02X}{:02X}",
+                raw[24], raw[25], raw[26], raw[27])
+        } else {
+            "????".to_string()
+        };
+        format!(
+            "{}  sig[0..3]={}",
             if e.sig_verified { "✓ VALID" } else { "✗ INVALID" },
-            e.raw_blob_hex.chars().take(8).collect::<String>()
-        ))
-        .unwrap_or_else(|| "--".to_string());
+            sig_fp
+        )
+    })
+    .unwrap_or_else(|| "--".to_string());
 
     let footer_title = format!(
-        " q: quit  |  DB: {}  |  last sig: {}...  |  skeleton: no AES decrypt yet ",
-        DB_PATH,
-        last_sig
+        " q: quit  |  DB: {}  |  last: {}  |  skeleton: no AES decrypt yet ",
+        DB_PATH, last
     );
 
     let footer = Block::default()
@@ -275,6 +307,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(footer, chunks[2]);
 }
+
 
 fn format_timestamp(ts_ms: u64) -> String {
     let secs = ts_ms / 1000;
