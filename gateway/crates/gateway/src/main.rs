@@ -13,8 +13,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
+use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
+use futures::StreamExt;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -324,74 +325,68 @@ async fn ble_task(
     vk:      Arc<VerifyingKey>,
     adapter: Adapter,
 ) {
+    use btleplug::api::CentralEvent;
+    use futures::StreamExt;
+
     adapter.start_scan(ScanFilter::default()).await
         .expect("BLE scan failed");
 
-    // Deduplicate — track recently seen blobs to avoid re-inserting cached peripherals
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut events = adapter.events().await
+        .expect("Failed to get BLE event stream");
 
-    loop {
-        let peripherals = adapter.peripherals().await.unwrap_or_default();
-
-        for p in peripherals {
-            let props = match p.properties().await {
-                Ok(Some(p)) => p,
-                _ => continue,
-            };
-
-            // Filter to LIMA manufacturer ID (0xFFFF)
-            if !props.manufacturer_data.contains_key(&0xFFFF) {
-                continue;
-            }
-
-            let node_id = props.address.to_string();
-            let rssi    = props.rssi.unwrap_or(0) as i8;
-
-            for (_, bytes) in &props.manufacturer_data {
-                let raw_blob_hex = hex::encode(bytes);
-
-                // Skip if already processed this exact payload
-                if seen.contains(&raw_blob_hex) {
-                    continue;
-                }
-                seen.insert(raw_blob_hex.clone());
-                // Cap seen set to avoid unbounded growth
-                if seen.len() > 500 {
-                    seen.clear();
-                }
-
-                let sig_verified = verify_outer_sig(bytes, &vk);
-
-                let received_at = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-
-                let mut rec = EventRecord {
-                    id: 0,
-                    node_id: node_id.clone(),
-                    received_at,
-                    sig_verified,
-                    rssi,
-                    raw_blob_hex,
+    while let Some(event) = events.next().await {
+        let (address, manufacturer_data, rssi) = match event {
+            CentralEvent::ManufacturerDataAdvertisement {
+                id,
+                manufacturer_data,
+            } => {
+                // Get RSSI from peripheral properties
+                let rssi = match adapter.peripheral(&id).await {
+                    Ok(p) => match p.properties().await {
+                        Ok(Some(props)) => props.rssi.unwrap_or(0) as i8,
+                        _ => 0i8,
+                    },
+                    _ => 0i8,
                 };
+                (id.to_string(), manufacturer_data, rssi)
+            }
+            _ => continue,
+        };
 
-                {
-                    let db = conn.lock().await;
-                    match db_insert(&db, &rec) {
-                        Ok(id) => rec.id = id,
-                        Err(e) => eprintln!("DB insert error: {}", e),
-                    }
-                }
+        // Filter to LIMA manufacturer ID (0xFFFF)
+        let Some(bytes) = manufacturer_data.get(&0xFFFF) else {
+            continue;
+        };
 
-                {
-                    let mut a = app.lock().await;
-                    a.push(rec);
-                }
+        let sig_verified = verify_outer_sig(bytes, &vk);
+        let raw_blob_hex = hex::encode(bytes);
+
+        let received_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let mut rec = EventRecord {
+            id: 0,
+            node_id: address,
+            received_at,
+            sig_verified,
+            rssi,
+            raw_blob_hex,
+        };
+
+        {
+            let db = conn.lock().await;
+            match db_insert(&db, &rec) {
+                Ok(id) => rec.id = id,
+                Err(e) => eprintln!("DB insert error: {}", e),
             }
         }
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        {
+            let mut a = app.lock().await;
+            a.push(rec);
+        }
     }
 }
 
