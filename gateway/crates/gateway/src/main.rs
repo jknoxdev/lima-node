@@ -142,15 +142,20 @@ fn load_test_verifying_key() -> VerifyingKey {
         .expect("TEST_NODE_PUBKEY_HEX invalid P-256 key")
 }
 
-/// Wire format received (90 bytes):
-/// [company_id(2) | proto_ver(1) | event_type(1) | sequence(4) |
+/// Wire format on the wire (90 bytes total):
+/// [company_id(2) | proto_version(1) | event_type(1) | sequence(4) |
 ///  timestamp_ms(4) | accel_g(4) | delta_pa(4) | node_id(6) | sig(64)]
+///
+/// btleplug strips company_id into the HashMap key — buffer arrives as 88 bytes:
+/// [proto_version(1) | event_type(1) | sequence(4) | timestamp_ms(4) |
+///  accel_g(4) | delta_pa(4) | node_id(6) | sig(64)]
 ///
 /// Signed data is lima_payload_t (24 bytes):
 /// [node_id(6) | event_type(1) | reserved(1) | sequence(4) |
 ///  timestamp_ms(4) | accel_g(4) | delta_pa(4)]
+
 fn verify_outer_sig(payload: &[u8], vk: &VerifyingKey) -> bool {
-    const ADV_LEN:     usize = 90;
+    const ADV_LEN:     usize = 88; // 90 minus 2-byte company_id stripped by btleplug
     const SIG_LEN:     usize = 64;
     const PAYLOAD_LEN: usize = 24;
 
@@ -158,24 +163,24 @@ fn verify_outer_sig(payload: &[u8], vk: &VerifyingKey) -> bool {
         return false;
     }
 
-    // Extract fields from ADV layout
-    let event_type   = payload[3];
-    let sequence     = &payload[4..8];
-    let timestamp_ms = &payload[8..12];
-    let accel_g      = &payload[12..16];
-    let delta_pa     = &payload[16..20];
-    let node_id      = &payload[20..26];
-    let sig_bytes    = &payload[26..90];
+    // offsets after company_id strip
+    let event_type   = payload[1];
+    let sequence     = &payload[2..6];
+    let timestamp_ms = &payload[6..10];
+    let accel_g      = &payload[10..14];
+    let delta_pa     = &payload[14..18];
+    let node_id      = &payload[18..24];
+    let sig_bytes    = &payload[24..88];
 
-    // Reconstruct lima_payload_t layout (24 bytes) exactly as firmware built it
+    // Reconstruct lima_payload_t (24 bytes) exactly as firmware built it
     let mut signed_data = [0u8; PAYLOAD_LEN];
-    signed_data[0..6].copy_from_slice(node_id);       // node_id
-    signed_data[6]    = event_type;                    // event_type
-    signed_data[7]    = 0x00;                          // reserved
-    signed_data[8..12].copy_from_slice(sequence);      // sequence
-    signed_data[12..16].copy_from_slice(timestamp_ms); // timestamp_ms
-    signed_data[16..20].copy_from_slice(accel_g);      // accel_g
-    signed_data[20..24].copy_from_slice(delta_pa);     // delta_pa
+    signed_data[0..6].copy_from_slice(node_id);        // node_id
+    signed_data[6]    = event_type;                     // event_type
+    signed_data[7]    = 0x00;                           // reserved
+    signed_data[8..12].copy_from_slice(sequence);       // sequence
+    signed_data[12..16].copy_from_slice(timestamp_ms);  // timestamp_ms
+    signed_data[16..20].copy_from_slice(accel_g);       // accel_g
+    signed_data[20..24].copy_from_slice(delta_pa);      // delta_pa
 
     match Signature::from_slice(sig_bytes) {
         Ok(sig) => vk.verify(&signed_data, &sig).is_ok(),
