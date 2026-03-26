@@ -45,3 +45,7 @@ config LIMA_PROVISION_UNIX_TIME
 config LIMA_RTC_LOG_LEVEL
     int "LIMA RTC log level"
     default 3
+
+config LIMA_FORCE_PROVISION
+    bool "Force-write provisioning epoch to DS3231 and NVS on boot"
+    default n

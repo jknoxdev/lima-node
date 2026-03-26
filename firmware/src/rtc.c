@@ -137,6 +137,35 @@ static int rtc_hw_read(uint32_t *out)
 
 
 /**
+ * @brief Check DS3231 Oscillator Stop Flag (status register 0x0F bit 7).
+ *
+ * OSF=1 means the oscillator was stopped at some point — either the battery
+ * died, the chip was never set, or power was lost with no backup.  When OSF
+ * is set the time register contents are unreliable and must NOT be treated
+ * as authoritative.  The existing write of 0x00 to 0x0F in lima_rtc_init()
+ * clears OSF after we have already read and acted on it.
+ *
+ * @return true  OSF is set   — DS3231 time is NOT trustworthy.
+ *         false OSF is clear — DS3231 has been running continuously.
+ */
+static bool rtc_hw_osf_is_set(void)
+{
+    const struct device *i2c = DEVICE_DT_GET(DT_NODELABEL(i2c0));
+    uint8_t reg    = 0x0F;
+    uint8_t status = 0;
+
+    int rc = i2c_write_read(i2c, 0x68, &reg, 1, &status, 1);
+    if (rc != 0) {
+        LOG_WRN("[RTC] OSF read failed (%d) — assuming set (worst case)", rc);
+        return true;
+    }
+
+    bool osf = (status & BIT(7)) != 0;
+    LOG_INF("[RTC] status reg=0x%02X  OSF=%d", status, osf ? 1 : 0);
+    return osf;
+}
+
+/**
  * @brief Write epoch to DS3231 hardware.
  * @param epoch  Unix seconds to set.
  * @return 0 on success, negative on failure.
@@ -276,13 +305,26 @@ int lima_rtc_init(void)
     nvs_ok    = (nvs_epoch_loaded > 0);
     nvs_epoch = nvs_epoch_loaded;
 
+    /* ── Force-provision override (make provision target only) ───────────── */
+    #if CONFIG_LIMA_FORCE_PROVISION && CONFIG_LIMA_PROVISION_UNIX_TIME != 0
+        LOG_WRN("[RTC] FORCE PROVISION: overwriting epoch %u → %u",
+                boot_epoch, CONFIG_LIMA_PROVISION_UNIX_TIME);
+        lima_rtc_set_epoch(CONFIG_LIMA_PROVISION_UNIX_TIME);
+        ret = LIMA_RTC_OK;
+    #endif
+
     /* ── 2. Read DS3231 ───────────────────────────────────────────────── */
     if (!device_is_ready(ds3231)) {
         LOG_ERR("[RTC] DS3231 not ready — skipping hardware read");
     } else {
         counter_cancel_channel_alarm(ds3231, 0);
 
-        /* Clear alarm flags via raw I2C write to status register (0x0F) */
+        /* Read OSF BEFORE clearing the status register.
+         * The write below zeroes bit 7 (OSF) along with the alarm flags —
+         * we must capture it first or we lose the provisioning signal. */
+        bool osf = rtc_hw_osf_is_set();
+
+        /* Clear alarm flags + OSF via raw I2C write to status register (0x0F) */
         const struct device *i2c = DEVICE_DT_GET(DT_NODELABEL(i2c0));
         uint8_t clear_buf[2] = {0x0F, 0x00};
         i2c_write(i2c, clear_buf, sizeof(clear_buf), 0x68);
@@ -290,6 +332,12 @@ int lima_rtc_init(void)
         int start_ret = counter_start(ds3231);
         if (start_ret < 0 && start_ret != -EALREADY) {
             LOG_ERR("[RTC] counter_start failed (%d)", start_ret);
+        } else if (osf) {
+            /* OSF set — oscillator was stopped.  Time register is unreliable.
+             * Do NOT mark hw_ok; let NVS or Kconfig bake-in seed the DS3231
+             * on this boot.  No tamper alarm — this is a known-good state for
+             * a freshly provisioned or battery-replaced device. */
+            LOG_WRN("[RTC] DS3231 OSF set — oscillator was stopped, treating as unprovisioned");
         } else {
             hw_ok = (rtc_hw_read(&hw_epoch) == 0);
         }
