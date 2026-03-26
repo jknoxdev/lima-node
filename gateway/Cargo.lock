@@ -592,6 +592,7 @@ version = "0.1.0"
 dependencies = [
  "btleplug",
  "crossterm",
+ "futures",
  "hex",
  "lima-types",
  "p256",

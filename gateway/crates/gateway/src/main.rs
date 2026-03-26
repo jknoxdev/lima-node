@@ -13,8 +13,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
+use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
+use futures::StreamExt;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -210,24 +211,48 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(header, chunks[0]);
 
     // ── Event table ───────────────────────────────────────────────────────────
-    let header_cells = ["time", "node_id", "seq", "sig", "rssi"]
+    let header_cells = ["time", "node_id", "evt", "seq", "sig", "rssi"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
     let table_header = Row::new(header_cells).height(1).bottom_margin(1);
 
     let rows = app.events.iter().map(|rec| {
-        let sig_cell = if rec.sig_verified {
-            Cell::from("✅ VALID").style(Style::default().fg(Color::Green))
+        // Parse evt, seq, sig fingerprint from raw bytes
+        // Offsets confirmed against ble.h (company_id stripped by btleplug):
+        // [0] proto_version  [1] event_type  [2..6] sequence  [24..88] sig
+        let raw = hex::decode(&rec.raw_blob_hex).unwrap_or_default();
+
+        let evt = raw.get(1)
+            .map(|b| format!("0x{:02X}", b))
+            .unwrap_or_else(|| "?".to_string());
+
+        let seq = if raw.len() >= 6 {
+            u32::from_le_bytes([raw[2], raw[3], raw[4], raw[5]]).to_string()
         } else {
-            Cell::from("❌ INVALID").style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            "?".to_string()
         };
 
-        let time_str = format_timestamp(rec.received_at);
+        let sig_fp = if raw.len() >= 28 {
+            // sig starts at offset 24 — show first 4 bytes as fingerprint
+            format!("{:02X}{:02X}{:02X}{:02X}",
+                raw[24], raw[25], raw[26], raw[27])
+        } else {
+            "?".to_string()
+        };
+
+        let sig_cell = if rec.sig_verified {
+            Cell::from(format!("✅ {}", sig_fp))
+                .style(Style::default().fg(Color::Green))
+        } else {
+            Cell::from(format!("❌ {}", sig_fp))
+                .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+        };
 
         Row::new(vec![
-            Cell::from(time_str),
+            Cell::from(format_timestamp(rec.received_at)),
             Cell::from(rec.node_id.clone()),
-            Cell::from("—"),   // seq: not decoded until AES decrypt sprint
+            Cell::from(evt),
+            Cell::from(seq),
             sig_cell,
             Cell::from(format!("{} dBm", rec.rssi)),
         ])
@@ -237,10 +262,11 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(12),  // time
+            Constraint::Length(10),  // time
             Constraint::Length(20),  // node_id
-            Constraint::Length(8),   // seq
-            Constraint::Length(12),  // sig
+            Constraint::Length(8),   // evt
+            Constraint::Length(6),   // seq
+            Constraint::Length(16),  // sig fingerprint
             Constraint::Length(10),  // rssi
         ],
     )
@@ -255,18 +281,25 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_stateful_widget(table, chunks[1], &mut app.table_state);
 
     // ── Footer ────────────────────────────────────────────────────────────────
-    let last_sig = app.events.first()
-        .map(|e| format!(
-            "{}  {}",
+    let last = app.events.first().map(|e| {
+        let raw = hex::decode(&e.raw_blob_hex).unwrap_or_default();
+        let sig_fp = if raw.len() >= 28 {
+            format!("{:02X}{:02X}{:02X}{:02X}",
+                raw[24], raw[25], raw[26], raw[27])
+        } else {
+            "????".to_string()
+        };
+        format!(
+            "{}  sig[0..3]={}",
             if e.sig_verified { "✓ VALID" } else { "✗ INVALID" },
-            e.raw_blob_hex.chars().take(8).collect::<String>()
-        ))
-        .unwrap_or_else(|| "--".to_string());
+            sig_fp
+        )
+    })
+    .unwrap_or_else(|| "--".to_string());
 
     let footer_title = format!(
-        " q: quit  |  DB: {}  |  last sig: {}...  |  skeleton: no AES decrypt yet ",
-        DB_PATH,
-        last_sig
+        " q: quit  |  DB: {}  |  last: {}  |  skeleton: no AES decrypt yet ",
+        DB_PATH, last
     );
 
     let footer = Block::default()
@@ -275,6 +308,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(footer, chunks[2]);
 }
+
 
 fn format_timestamp(ts_ms: u64) -> String {
     let secs = ts_ms / 1000;
@@ -291,74 +325,68 @@ async fn ble_task(
     vk:      Arc<VerifyingKey>,
     adapter: Adapter,
 ) {
+    use btleplug::api::CentralEvent;
+    use futures::StreamExt;
+
     adapter.start_scan(ScanFilter::default()).await
         .expect("BLE scan failed");
 
-    // Deduplicate — track recently seen blobs to avoid re-inserting cached peripherals
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut events = adapter.events().await
+        .expect("Failed to get BLE event stream");
 
-    loop {
-        let peripherals = adapter.peripherals().await.unwrap_or_default();
-
-        for p in peripherals {
-            let props = match p.properties().await {
-                Ok(Some(p)) => p,
-                _ => continue,
-            };
-
-            // Filter to LIMA manufacturer ID (0xFFFF)
-            if !props.manufacturer_data.contains_key(&0xFFFF) {
-                continue;
-            }
-
-            let node_id = props.address.to_string();
-            let rssi    = props.rssi.unwrap_or(0) as i8;
-
-            for (_, bytes) in &props.manufacturer_data {
-                let raw_blob_hex = hex::encode(bytes);
-
-                // Skip if already processed this exact payload
-                if seen.contains(&raw_blob_hex) {
-                    continue;
-                }
-                seen.insert(raw_blob_hex.clone());
-                // Cap seen set to avoid unbounded growth
-                if seen.len() > 500 {
-                    seen.clear();
-                }
-
-                let sig_verified = verify_outer_sig(bytes, &vk);
-
-                let received_at = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-
-                let mut rec = EventRecord {
-                    id: 0,
-                    node_id: node_id.clone(),
-                    received_at,
-                    sig_verified,
-                    rssi,
-                    raw_blob_hex,
+    while let Some(event) = events.next().await {
+        let (address, manufacturer_data, rssi) = match event {
+            CentralEvent::ManufacturerDataAdvertisement {
+                id,
+                manufacturer_data,
+            } => {
+                // Get RSSI from peripheral properties
+                let rssi = match adapter.peripheral(&id).await {
+                    Ok(p) => match p.properties().await {
+                        Ok(Some(props)) => props.rssi.unwrap_or(0) as i8,
+                        _ => 0i8,
+                    },
+                    _ => 0i8,
                 };
+                (id.to_string(), manufacturer_data, rssi)
+            }
+            _ => continue,
+        };
 
-                {
-                    let db = conn.lock().await;
-                    match db_insert(&db, &rec) {
-                        Ok(id) => rec.id = id,
-                        Err(e) => eprintln!("DB insert error: {}", e),
-                    }
-                }
+        // Filter to LIMA manufacturer ID (0xFFFF)
+        let Some(bytes) = manufacturer_data.get(&0xFFFF) else {
+            continue;
+        };
 
-                {
-                    let mut a = app.lock().await;
-                    a.push(rec);
-                }
+        let sig_verified = verify_outer_sig(bytes, &vk);
+        let raw_blob_hex = hex::encode(bytes);
+
+        let received_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let mut rec = EventRecord {
+            id: 0,
+            node_id: address,
+            received_at,
+            sig_verified,
+            rssi,
+            raw_blob_hex,
+        };
+
+        {
+            let db = conn.lock().await;
+            match db_insert(&db, &rec) {
+                Ok(id) => rec.id = id,
+                Err(e) => eprintln!("DB insert error: {}", e),
             }
         }
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        {
+            let mut a = app.lock().await;
+            a.push(rec);
+        }
     }
 }
 
