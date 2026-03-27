@@ -5,6 +5,8 @@
  * This file owns all state transition logic. It communicates with
  * hardware exclusively through the fsm_hw_* hooks implemented in main.c.
  * It posts events back to the queue via lima_post_event() declared in fsm.h.
+ *
+ * Wire format spec: docs/dev/frame-record-spec.md
  */
 
 #include <zephyr/logging/log.h>
@@ -26,10 +28,10 @@ lima_fsm_ctx_t fsm = {
 static lima_state_t current_state = STATE_BOOT;
 
 /* timeouts and their handlers */
-static struct k_work_delayable cooldown_work; //duped in main
-static struct k_work_delayable tx_timeout_work; //duped in main
-static struct k_work_delayable armed_dwell_work; 
-static struct k_work_delayable inactivity_work; 
+static struct k_work_delayable cooldown_work;
+static struct k_work_delayable tx_timeout_work;
+static struct k_work_delayable armed_dwell_work;
+static struct k_work_delayable inactivity_work;
 
 /* ── Forward Declarations ────────────────────────────────────────────────── */
 
@@ -64,11 +66,6 @@ static void state_transmitting_handle(const lima_event_t *evt);
 static void state_cooldown_handle(const lima_event_t *evt);
 static void state_fault_handle(const lima_event_t *evt);
 static void state_low_battery_handle(const lima_event_t *evt);
-
-/* HAL stubs — real implementations declared in main.c via fsm.h */
-/* These are the internal C wrappers around the hw_* functions in main.c.
-   NOTE: hw_* functions must be wired to the
-   fsm_hw_* trampolines below, or promoted to non-static + declared here. */
 
 /* ── State Name Table ────────────────────────────────────────────────────── */
 
@@ -141,7 +138,6 @@ static void transition(lima_state_t next)
 
 static void cooldown_expiry_cb(struct k_work *work)
 {
-    LOG_ERR("cooldown_work FIRED at %u ms", k_uptime_get_32());
     ARG_UNUSED(work);
     lima_event_t e = {
         .type         = LIMA_EVT_COOLDOWN_EXPIRED,
@@ -164,7 +160,6 @@ static void tx_timeout_cb(struct k_work *work)
 
 static void armed_dwell_expiry_cb(struct k_work *work)
 {
-    LOG_ERR("armed_dwell_work FIRED at %u ms", k_uptime_get_32());
     ARG_UNUSED(work);
     lima_event_t e = {
         .type         = LIMA_EVT_ARMED_TIMEOUT,
@@ -176,7 +171,6 @@ static void armed_dwell_expiry_cb(struct k_work *work)
 
 static void inactivity_expiry_cb(struct k_work *work)
 {
-    LOG_ERR("inactivity_work FIRED at %u ms", k_uptime_get_32());
     ARG_UNUSED(work);
     lima_event_t e = {
         .type         = LIMA_EVT_INACTIVITY_TIMEOUT,
@@ -191,9 +185,6 @@ static void inactivity_expiry_cb(struct k_work *work)
 static void state_boot_enter(void)
 {
     LOG_INF("BOOT: entered");
-    /* Hardware init is handled by main.c before fsm_init() is called.
-       If sensors failed, main.c should post LIMA_EVT_ERROR before this runs.
-       On success, post INIT_COMPLETE to drive the transition. */
     lima_event_t e = {
         .type         = LIMA_EVT_INIT_COMPLETE,
         .timestamp_ms = k_uptime_get_32(),
@@ -206,8 +197,6 @@ static void state_boot_enter(void)
 static void state_calibrating_enter(void)
 {
     LOG_INF("CALIBRATING: warming up sensors");
-    /* Calibration is a stub; a real impl would be async and post
-       LIMA_EVT_BASELINE_READY when done. For now post it directly. */
     lima_event_t e = {
         .type         = LIMA_EVT_BASELINE_READY,
         .timestamp_ms = k_uptime_get_32(),
@@ -223,8 +212,6 @@ static void state_armed_enter(void)
     fsm.armed_since_ms = k_uptime_get_32();
 
     k_work_reschedule(&inactivity_work, K_MSEC(SLEEP_INACTIVITY_MS));
-
-    /* 2. Reset the dwell timer */
     k_work_reschedule(&armed_dwell_work, K_MSEC(ARMED_DWELL_MS));
 }
 
@@ -234,7 +221,7 @@ static void state_armed_exit(void)
     k_work_cancel_delayable(&armed_dwell_work);
 }
 
-static void state_armed_handle(const lima_event_t *evt) 
+static void state_armed_handle(const lima_event_t *evt)
 {
     switch (evt->type) {
         case LIMA_EVT_PRESSURE_BREACH:
@@ -251,13 +238,11 @@ static void state_armed_handle(const lima_event_t *evt)
             break;
 
         case LIMA_EVT_ARMED_TIMEOUT:
-            /* Dwell period complete — safe to enter light sleep */
             LOG_INF("ARMED: dwell complete -> LIGHT_SLEEP");
             transition(STATE_LIGHT_SLEEP);
             break;
 
         case LIMA_EVT_POLL_TICK:
-            /* Heartbeat tick during dwell — stay ARMED, nothing to do */
             LOG_DBG("ARMED: tick (dwell active)");
             break;
 
@@ -296,15 +281,10 @@ static void state_light_sleep_handle(const lima_event_t *evt)
         break;
 
     case LIMA_EVT_POLL_TICK:
-        /* Intentionally ignored — LIGHT_SLEEP exits only on:
-        * 1. Sensor event (IRQ) → EVENT_DETECTED
-        * 2. Inactivity timeout → DEEP_SLEEP
-        * Keepalive heartbeat belongs in ARMED (v2). See FUTURE.md */
         LOG_DBG("LIGHT_SLEEP: ignoring poll tick");
         break;
 
     case LIMA_EVT_INACTIVITY_TIMEOUT:
-        /* The 30s timer expired while we were in Light Sleep */
         transition(STATE_DEEP_SLEEP);
         break;
 
@@ -340,9 +320,9 @@ static void state_deep_sleep_handle(const lima_event_t *evt)
         transition(STATE_LOW_BATTERY);
         break;
 
-    case LIMA_EVT_POLL_TICK: 
+    case LIMA_EVT_POLL_TICK:
         break;
-    
+
     default:
         LOG_WRN("DEEP_SLEEP: unhandled event 0x%02X", evt->type);
         break;
@@ -360,19 +340,27 @@ static void state_event_detected_enter(void)
             fsm.last_event.timestamp_ms,
             tsbuf);
 
-    // /* Kick off async signing; stub posts SIGNING_COMPLETE synchronously */
-    // lima_event_t e = {
-    //     .type         = LIMA_EVT_SIGNING_COMPLETE,
-    //     .timestamp_ms = k_uptime_get_32(),
-    // };
-    // lima_post_event(&e);
-
     transition(STATE_SIGNING);
 }
 
-
 /* ── State: SIGNING ──────────────────────────────────────────────────────── */
 
+/*
+ * signing_complete_cb — called by lima_crypto_sign_async() with inner_sig result.
+ *
+ * Assembles lima_lf_t (LIMA Frame) from LER + inner_sig.
+ *
+ * STUB (feat/frame-record-spec): AES-256-GCM encryption not yet applied.
+ * ciphertext field = LER || inner_sig in plaintext.
+ * nonce and gcm_tag are zeroed.
+ * outer_sig = inner_sig (placeholder — proper outer sig over LF[0..120] is
+ *             implemented in feat/ler-encrypt).
+ *
+ * TODO(feat/ler-encrypt): replace stub body with:
+ *   1. psa_generate_random(nonce, 12)
+ *   2. psa_aead_encrypt(AES-256-GCM, plaintext → ciphertext + gcm_tag)
+ *   3. psa_sign_message(ECDSA-P256, LF[0..120] → outer_sig)
+ */
 static void signing_complete_cb(const lima_sig_result_t *result)
 {
     if (result->err != PSA_SUCCESS) {
@@ -384,14 +372,42 @@ static void signing_complete_cb(const lima_sig_result_t *result)
         lima_post_event(&e);
         return;
     }
-    memcpy(fsm.last_sig, result->sig, result->sig_len);
-    fsm.last_sig_len = result->sig_len;
-    LOG_INF("SIGNING: sig[0..7]=%02X%02X%02X%02X%02X%02X%02X%02X stored (%u bytes)",
-            fsm.last_sig[0], fsm.last_sig[1], fsm.last_sig[2], fsm.last_sig[3],
-            fsm.last_sig[4], fsm.last_sig[5], fsm.last_sig[6], fsm.last_sig[7],
-            fsm.last_sig_len);
-    LOG_HEXDUMP_INF(fsm.last_sig, fsm.last_sig_len, "  fsm.last_sig:");
-    
+
+    /* ── Assemble LIMA Frame (LF) ──────────────────────────────────────── */
+    memset(&fsm.last_lf, 0, sizeof(fsm.last_lf));
+
+    /* Header */
+    fsm.last_lf.proto_version = 0x02;
+    fsm.last_lf.event_type    = fsm.last_ler.event_type;
+    /* reserved stays zero */
+
+    /* STUB: nonce = zeros (no AES-GCM yet) */
+    memset(fsm.last_lf.nonce, 0, sizeof(fsm.last_lf.nonce));
+
+    /* STUB: ciphertext = LER (24B) || inner_sig (64B) in plaintext */
+    BUILD_ASSERT(sizeof(fsm.last_ler) + 64 == sizeof(fsm.last_lf.ciphertext),
+                 "LF ciphertext size must equal LER + inner_sig");
+    memcpy(fsm.last_lf.ciphertext,
+           &fsm.last_ler,
+           sizeof(fsm.last_ler));
+    memcpy(fsm.last_lf.ciphertext + sizeof(fsm.last_ler),
+           result->sig,
+           result->sig_len);
+
+    /* STUB: gcm_tag = zeros (no AES-GCM yet) */
+    memset(fsm.last_lf.gcm_tag, 0, sizeof(fsm.last_lf.gcm_tag));
+
+    /* STUB: outer_sig = inner_sig (placeholder — real outer sig covers LF[0..120]) */
+    memcpy(fsm.last_lf.outer_sig, result->sig, result->sig_len);
+
+    LOG_INF("SIGNING: LF assembled — proto=0x%02X evt=0x%02X "
+            "inner_sig[0..3]=%02X%02X%02X%02X [STUB: no AES-GCM]",
+            fsm.last_lf.proto_version,
+            fsm.last_lf.event_type,
+            result->sig[0], result->sig[1],
+            result->sig[2], result->sig[3]);
+    LOG_HEXDUMP_INF((const uint8_t *)&fsm.last_lf, sizeof(fsm.last_lf), "  LF:");
+
     lima_event_t e = {
         .type         = LIMA_EVT_SIGNING_COMPLETE,
         .timestamp_ms = k_uptime_get_32(),
@@ -401,16 +417,13 @@ static void signing_complete_cb(const lima_sig_result_t *result)
 
 static void state_signing_enter(void)
 {
-    LOG_INF("SIGNING: building payload and signing...");
+    LOG_INF("SIGNING: building LER and signing...");
 
-    // lima_payload_t payload;
-    // lima_crypto_build_payload(&payload, &fsm.last_event);
-    lima_crypto_build_payload(&fsm.last_payload, &fsm.last_event);  // ← was local
+    lima_crypto_build_ler(&fsm.last_ler, &fsm.last_event);
 
-    // int rc = lima_crypto_sign_async(&payload, signing_complete_cb);
-    int rc = lima_crypto_sign_async(&fsm.last_payload, signing_complete_cb);
+    int rc = lima_crypto_sign_async(&fsm.last_ler, signing_complete_cb);
     if (rc != 0) {
-        LOG_ERR("EVENT_DETECTED: failed to start signing (%d) -> FAULT", rc);
+        LOG_ERR("SIGNING: failed to start signing (%d) -> FAULT", rc);
         transition(STATE_FAULT);
     }
 }
@@ -419,7 +432,7 @@ static void state_signing_handle(const lima_event_t *evt)
 {
     switch (evt->type) {
     case LIMA_EVT_SIGNING_COMPLETE:
-        LOG_INF("SIGNING: payload ready -> TRANSMITTING");
+        LOG_INF("SIGNING: LF ready -> TRANSMITTING");
         transition(STATE_TRANSMITTING);
         break;
 
@@ -455,20 +468,15 @@ static void ble_tx_complete_cb(lima_ble_err_t err)
 
 static void state_transmitting_enter(void)
 {
-    LOG_INF("TRANSMITTING: advertising signed payload via BLE");
+    LOG_INF("TRANSMITTING: advertising LIMA Frame (LF) via BLE");
 
     k_work_reschedule(&tx_timeout_work, K_MSEC(TX_TIMEOUT_MS));
 
-    int err = lima_ble_advertise(
-        &fsm.last_payload,
-        fsm.last_sig,
-        fsm.last_sig_len,
-        ble_tx_complete_cb
-    );
+    int err = lima_ble_advertise(&fsm.last_lf, ble_tx_complete_cb);
     if (err != 0) {
         LOG_ERR("TRANSMITTING: failed to start BLE adv (%d) -> FAULT", err);
         transition(STATE_FAULT);
-    };
+    }
 }
 
 static void state_transmitting_handle(const lima_event_t *evt)
@@ -528,12 +536,10 @@ static void state_cooldown_handle(const lima_event_t *evt)
         break;
 
     default:
-        /* Intentional: suppress sensor events during cooldown */
         LOG_DBG("COOLDOWN: suppressed event 0x%02X", evt->type);
         break;
     }
 }
-
 
 /* ── State: FAULT ────────────────────────────────────────────────────────── */
 
@@ -543,7 +549,6 @@ static void state_fault_enter(void)
 
     if (fsm.fault_retries >= MAX_FAULT_RETRIES) {
         LOG_ERR("FAULT: max retries exceeded -> requesting watchdog reset");
-        /* Post ERROR to let fsm_dispatch trigger the watchdog path */
         lima_event_t e = {
             .type         = LIMA_EVT_ERROR,
             .timestamp_ms = k_uptime_get_32(),
@@ -554,9 +559,8 @@ static void state_fault_enter(void)
 
     fsm.fault_retries++;
 
-    /* Recovery attempt — result posted back as an event */
     lima_event_t e = {
-        .type         = LIMA_EVT_RECOVERY_SUCCESS, /* stub always succeeds */
+        .type         = LIMA_EVT_RECOVERY_SUCCESS,
         .timestamp_ms = k_uptime_get_32(),
     };
     lima_post_event(&e);
@@ -574,7 +578,6 @@ static void state_fault_handle(const lima_event_t *evt)
     case LIMA_EVT_RECOVERY_FAILED:
     case LIMA_EVT_ERROR:
         LOG_ERR("FAULT: unrecoverable — watchdog reset required");
-        /* hw_watchdog_reset() called via HAL in main.c — post request */
         break;
 
     default:
@@ -600,7 +603,6 @@ static void state_low_battery_handle(const lima_event_t *evt)
 
     case LIMA_EVT_CRITICAL_BATTERY:
         LOG_ERR("LOW BATTERY: critical Vbat -> shutdown");
-        /* TODO: safe shutdown sequence */
         break;
 
     case LIMA_EVT_PRESSURE_BREACH:
@@ -630,7 +632,7 @@ void fsm_init(void)
 
     current_state = STATE_BOOT;
     fsm_hw_set_led(STATE_BOOT);
-    state_boot_enter(); 
+    state_boot_enter();
 
     LOG_INF("FSM: Initialized in %s", fsm_state_to_str(current_state));
 }
@@ -642,8 +644,8 @@ lima_state_t fsm_get_state(void)
 
 void fsm_dispatch(const lima_event_t *evt)
 {
-    fsm_hw_wdt_kick(); 
-    
+    fsm_hw_wdt_kick();
+
     /* Lifecycle events that drive boot sequencing */
     if (current_state == STATE_BOOT && evt->type == LIMA_EVT_INIT_COMPLETE) {
         transition(STATE_CALIBRATING);

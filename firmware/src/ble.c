@@ -1,11 +1,13 @@
- /*
+/*
  * L.I.M.A. — Local Integrity Multi-modal Architecture
- * ble.c — BLE 5.0 extended non-connectable advertising of signed lima_payload_t
+ * ble.c — BLE 5.0 extended non-connectable advertising of lima_lf_t (LIMA Frame)
  *
- * Encodes lima_payload_t + ECDSA-P256 sig into manufacturer-specific AD data
- * and advertises as extended ADV_NONCONN_IND (90 bytes) via bt_le_ext_adv API.
+ * Encodes a pre-assembled lima_lf_t into manufacturer-specific AD data
+ * and advertises as extended ADV_NONCONN_IND (184 bytes) via bt_le_ext_adv API.
  * Completion callback posts LIMA_EVT_TX_COMPLETE or LIMA_EVT_BLE_FAULT
  * to the FSM queue via fsm.c.
+ *
+ * Wire format spec: docs/dev/frame-record-spec.md
  *
  * Call order (from main.c and fsm.c):
  *   1. lima_ble_init()        — once, after bt_enable() in main.c
@@ -29,17 +31,16 @@ static lima_ble_cb_t           adv_cb          = NULL;
 static struct k_work_delayable adv_stop_work;
 static struct bt_le_ext_adv   *ext_adv         = NULL;
 
-/* ── AD buffers ─────────────────────────────────────────────────────── */
+/* ── AD buffers ──────────────────────────────────────────────────────────── */
 
-/* Manufacturer-specific data buffer — populated per-advertisement */
-static lima_adv_payload_t  adv_payload_buf;
+/* LIMA Frame buffer — populated per-advertisement from the pre-assembled LF */
+static lima_lf_t lf_buf;
 
 static struct bt_data adv_data[] = {
-    /* Manufacturer specific — 90 bytes: payload + sig */
-    /* NOTE: no BT_DATA_FLAGS for extended non-connectable ADV */
+    /* Manufacturer specific — 184 bytes: full LIMA Frame (LF) */
     BT_DATA(BT_DATA_MANUFACTURER_DATA,
-            &adv_payload_buf,
-            sizeof(lima_adv_payload_t)),
+            &lf_buf,
+            sizeof(lima_lf_t)),
 };
 
 /* ── Advertisement stop work ─────────────────────────────────────────────── */
@@ -64,7 +65,6 @@ static void adv_stop_fn(struct k_work *work)
         adv_cb = NULL;
     }
 }
-
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
@@ -93,52 +93,34 @@ int lima_ble_init(void)
     }
 
     ble_initialized = true;
-    LOG_INF("BLE: initialized — LIMA_NODE_01 ready to advertise (ext ADV)");
+    LOG_INF("BLE: initialized — LIMA node ready to advertise (ext ADV, 184B LF)");
     return 0;
 }
 
-int lima_ble_advertise(const lima_payload_t *payload,
-                       const uint8_t *sig,
-                       size_t sig_len,
-                       lima_ble_cb_t cb)
+int lima_ble_advertise(const lima_lf_t *lf, lima_ble_cb_t cb)
 {
     if (!ble_initialized) {
         LOG_ERR("BLE: not initialized — call lima_ble_init() first");
         return -ECANCELED;
     }
 
-    if (payload == NULL || sig == NULL || cb == NULL) {
+    if (lf == NULL || cb == NULL) {
         LOG_ERR("BLE: NULL parameter");
         return -EINVAL;
     }
 
-    /* Encode lima_payload_t + sig → lima_adv_payload_t */
-    memset(&adv_payload_buf, 0, sizeof(adv_payload_buf));
-    adv_payload_buf.company_id    = 0xFFFF;
-    adv_payload_buf.proto_version = 0x02;
-    adv_payload_buf.event_type    = payload->event_type;
-    adv_payload_buf.sequence      = payload->sequence;
-    adv_payload_buf.timestamp_ms  = payload->timestamp_ms;
-    adv_payload_buf.accel_g       = payload->accel_g;
-    adv_payload_buf.delta_pa      = payload->delta_pa;
-    memcpy(adv_payload_buf.node_id, payload->node_id,
-           sizeof(adv_payload_buf.node_id));
-    memcpy(adv_payload_buf.sig, sig,
-           MIN(sig_len, sizeof(adv_payload_buf.sig)));
+    /* Copy pre-assembled LF into the AD buffer */
+    memcpy(&lf_buf, lf, sizeof(lima_lf_t));
 
-    LOG_INF("BLE: advertising — node=%02X:%02X:%02X:%02X:%02X:%02X "
-            "evt=0x%02X seq=%u accel=%.2f delta_pa=%.2f sig[0..3]=%02X%02X%02X%02X",
-            adv_payload_buf.node_id[0], adv_payload_buf.node_id[1],
-            adv_payload_buf.node_id[2], adv_payload_buf.node_id[3],
-            adv_payload_buf.node_id[4], adv_payload_buf.node_id[5],
-            adv_payload_buf.event_type,
-            adv_payload_buf.sequence,
-            (double)adv_payload_buf.accel_g,
-            (double)adv_payload_buf.delta_pa,
-            adv_payload_buf.sig[0], adv_payload_buf.sig[1],
-            adv_payload_buf.sig[2], adv_payload_buf.sig[3]);
-    LOG_HEXDUMP_INF((const uint8_t *)&adv_payload_buf,
-                    sizeof(adv_payload_buf), "  adv_payload:");
+    LOG_INF("BLE: advertising LF — proto=0x%02X evt=0x%02X "
+            "nonce[0..3]=%02X%02X%02X%02X outer_sig[0..3]=%02X%02X%02X%02X",
+            lf_buf.proto_version,
+            lf_buf.event_type,
+            lf_buf.nonce[0], lf_buf.nonce[1],
+            lf_buf.nonce[2], lf_buf.nonce[3],
+            lf_buf.outer_sig[0], lf_buf.outer_sig[1],
+            lf_buf.outer_sig[2], lf_buf.outer_sig[3]);
+    LOG_HEXDUMP_INF((const uint8_t *)&lf_buf, sizeof(lf_buf), "  LF:");
 
     /* Update advertising data */
     int err = bt_le_ext_adv_set_data(ext_adv,
