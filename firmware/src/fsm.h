@@ -1,73 +1,136 @@
+/*
+ * L.I.M.A. — Local Integrity Multi-modal Architecture
+ * fsm.h — FSM public API, state definitions, and context struct
+ *
+ * Wire format spec: docs/dev/frame-record-spec.md
+ */
+
 #ifndef LIMA_FSM_H
 #define LIMA_FSM_H
 
-#include <zephyr/kernel.h>
-#include <stdbool.h>
+#include <stdint.h>
 #include "events.h"
 #include "crypto.h"
+#include "ble.h"
 
-#define SLEEP_INACTIVITY_MS     120000   /* no event → deep sleep             */
-#define TX_TIMEOUT_MS           1500     /* tune later */
-#define MAX_FAULT_RETRIES       3
-#define ARMED_DWELL_MS          30000
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/* ── State Definitions ───────────────────────────────────────────────────── */
+/* ── Timing constants ────────────────────────────────────────────────────── */
+
+#define ARMED_DWELL_MS          10000   /* ms in ARMED before light sleep eligible */
+#define SLEEP_INACTIVITY_MS     30000   /* ms of no events before deep sleep       */
+#define TX_TIMEOUT_MS           5000    /* ms to wait for BLE TX confirmation      */
+#define MAX_FAULT_RETRIES       3       /* fault recovery attempts before WDT reset */
+
+/* ── State machine states ────────────────────────────────────────────────── */
+
 typedef enum {
-    STATE_BOOT,
+    STATE_BOOT           = 0,
     STATE_CALIBRATING,
     STATE_ARMED,
-    STATE_LIGHT_SLEEP,    /* System ON: CPU idle, RAM on, fast wakeup */
-    STATE_DEEP_SLEEP,     /* System OFF: Lowest power, RAM off, Reset wakeup */
+    STATE_LIGHT_SLEEP,
+    STATE_DEEP_SLEEP,
     STATE_EVENT_DETECTED,
     STATE_SIGNING,
     STATE_TRANSMITTING,
     STATE_COOLDOWN,
     STATE_FAULT,
     STATE_LOW_BATTERY,
-    STATE_COUNT
+    STATE_COUNT,
 } lima_state_t;
 
+/* ── FSM context ─────────────────────────────────────────────────────────── */
+/*
+ * Single instance — lives in fsm.c as `lima_fsm_ctx_t fsm`.
+ * All signing and transmission state threads through here.
+ *
+ * last_event  — raw lima_event_t from sensor thread; copied on trigger
+ * last_ler    — LIMA Event Record (LER, 24B) built from last_event
+ * last_lf     — LIMA Frame (LF, 184B) assembled in signing_complete_cb
+ *               STUB(feat/frame-record-spec): ciphertext = plaintext until
+ *               AES-256-GCM is wired in feat/ler-encrypt
+ */
 typedef struct {
-    lima_event_t      last_event;
-    lima_payload_t    last_payload;
-    uint8_t           last_sig[64];      /* ECDSA-P256 signature from SIGNING */
-    size_t            last_sig_len;      /* actual sig length (usually 64)    */
-    uint32_t          armed_since_ms;
-    uint32_t          cooldown_ms;
-    uint8_t           fault_retries;
+    lima_event_t    last_event;         /* raw event from sensor thread     */
+    lima_ler_t      last_ler;           /* LER built from last_event        */
+    lima_lf_t       last_lf;            /* LF assembled after signing       */
+
+    uint32_t        cooldown_ms;        /* cooldown suppression window (ms) */
+    uint32_t        armed_since_ms;     /* uptime at last ARMED entry       */
+    int             fault_retries;      /* fault recovery attempt counter   */
 } lima_fsm_ctx_t;
 
-
-/* ── FSM Logic API ───────────────────────────────────────────────────────── */
-
-void fsm_init(void);
-void fsm_hw_wdt_kick(void);
-void fsm_dispatch(const lima_event_t *evt); 
-lima_state_t fsm_get_state(void);
-const char* fsm_state_to_str(lima_state_t state);
-
-/* ── Event Queue API (defined in main.c) ────────────────────────────────── */
-/* fsm.c calls this to post events back to the queue during transitions */
-int lima_post_event(const lima_event_t *evt);
-
-
-/* ── Hardware Abstraction Hooks (The "Stubs" for main.c) ────────────────── */
+/* ── Public API ──────────────────────────────────────────────────────────── */
 
 /**
- * @brief Light Sleep (System ON). 
- * CPU stops, but peripheral state and RAM are preserved.
+ * @brief Initialize FSM work items and enter BOOT state.
+ *
+ * Must be called from fsm_thread_fn() before the event loop.
+ */
+void fsm_init(void);
+
+/**
+ * @brief Dispatch an event to the active state's handler.
+ *
+ * Called from the FSM thread event loop for every queued lima_event_t.
+ * Kicks the hardware watchdog on every call.
+ *
+ * @param evt  Event to dispatch — must be non-NULL.
+ */
+void fsm_dispatch(const lima_event_t *evt);
+
+/**
+ * @brief Return the current FSM state.
+ */
+lima_state_t fsm_get_state(void);
+
+/**
+ * @brief Return a human-readable string for a state value.
+ */
+const char *fsm_state_to_str(lima_state_t state);
+
+/* ── Event posting (implemented in main.c) ───────────────────────────────── */
+
+/**
+ * @brief Post an event to the FSM message queue.
+ *
+ * Non-blocking. May be called from ISR or thread context.
+ * Returns 0 on success, negative errno if queue is full.
+ */
+int lima_post_event(const lima_event_t *evt);
+
+/* ── Hardware hooks (implemented in main.c) ──────────────────────────────── */
+
+/**
+ * @brief Set LEDs to reflect the current FSM state.
+ */
+void fsm_hw_set_led(lima_state_t state);
+
+/**
+ * @brief Enter light sleep mode (CPU idle, sensor IRQs active).
  */
 void fsm_hw_enter_sleep(void);
 
 /**
- * @brief Deep Sleep (System OFF). 
- * chip powers down almost entirely. Next wakeup is a reboot.
+ * @brief Enter deep sleep (BLE off, RTC wakeup only).
  */
 void fsm_hw_enter_deep_sleep(void);
 
 /**
- * @brief Updates physical LEDs based on the FSM state.
+ * @brief Feed the hardware watchdog timer.
+ *
+ * Called at the top of every fsm_dispatch() invocation.
  */
-void fsm_hw_set_led(lima_state_t state);
+void fsm_hw_wdt_kick(void);
+
+/* ── Global FSM context (defined in fsm.c) ───────────────────────────────── */
+
+extern lima_fsm_ctx_t fsm;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIMA_FSM_H */
