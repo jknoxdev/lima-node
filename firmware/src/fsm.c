@@ -364,7 +364,7 @@ static void state_event_detected_enter(void)
 static void signing_complete_cb(const lima_sig_result_t *result)
 {
     if (result->err != PSA_SUCCESS) {
-        LOG_ERR("SIGNING: crypto failed (%d) -> FAULT", result->err);
+        LOG_ERR("SIGNING: inner sign failed (%d) -> FAULT", result->err);
         lima_event_t e = {
             .type         = LIMA_EVT_SENSOR_FAULT,
             .timestamp_ms = k_uptime_get_32(),
@@ -373,40 +373,27 @@ static void signing_complete_cb(const lima_sig_result_t *result)
         return;
     }
 
-    /* ── Assemble LIMA Frame (LF) ──────────────────────────────────────── */
-    memset(&fsm.last_lf, 0, sizeof(fsm.last_lf));
+    LOG_INF("SIGNING: inner sign done — building encrypted LF...");
 
-    /* Header */
-    fsm.last_lf.proto_version = 0x02;
-    fsm.last_lf.event_type    = fsm.last_ler.event_type;
-    /* reserved stays zero */
+    /* Encrypt-then-Sign: AES-256-GCM + outer ECDSA → fully assembled LF */
+    int rc = lima_crypto_build_lf(
+        &fsm.last_ler,
+        result->sig,
+        result->sig_len,
+        &fsm.last_lf
+    );
 
-    /* STUB: nonce = zeros (no AES-GCM yet) */
-    memset(fsm.last_lf.nonce, 0, sizeof(fsm.last_lf.nonce));
+    if (rc != 0) {
+        LOG_ERR("SIGNING: lima_crypto_build_lf failed (%d) -> FAULT", rc);
+        lima_event_t e = {
+            .type         = LIMA_EVT_SENSOR_FAULT,
+            .timestamp_ms = k_uptime_get_32(),
+        };
+        lima_post_event(&e);
+        return;
+    }
 
-    /* STUB: ciphertext = LER (24B) || inner_sig (64B) in plaintext */
-    BUILD_ASSERT(sizeof(fsm.last_ler) + 64 == sizeof(fsm.last_lf.ciphertext),
-                 "LF ciphertext size must equal LER + inner_sig");
-    memcpy(fsm.last_lf.ciphertext,
-           &fsm.last_ler,
-           sizeof(fsm.last_ler));
-    memcpy(fsm.last_lf.ciphertext + sizeof(fsm.last_ler),
-           result->sig,
-           result->sig_len);
-
-    /* STUB: gcm_tag = zeros (no AES-GCM yet) */
-    memset(fsm.last_lf.gcm_tag, 0, sizeof(fsm.last_lf.gcm_tag));
-
-    /* STUB: outer_sig = inner_sig (placeholder — real outer sig covers LF[0..120]) */
-    memcpy(fsm.last_lf.outer_sig, result->sig, result->sig_len);
-
-    LOG_INF("SIGNING: LF assembled — proto=0x%02X evt=0x%02X "
-            "inner_sig[0..3]=%02X%02X%02X%02X [STUB: no AES-GCM]",
-            fsm.last_lf.proto_version,
-            fsm.last_lf.event_type,
-            result->sig[0], result->sig[1],
-            result->sig[2], result->sig[3]);
-    LOG_HEXDUMP_INF((const uint8_t *)&fsm.last_lf, sizeof(fsm.last_lf), "  LF:");
+    LOG_INF("SIGNING: LF ready — 184B encrypted+signed ✓");
 
     lima_event_t e = {
         .type         = LIMA_EVT_SIGNING_COMPLETE,
@@ -417,7 +404,7 @@ static void signing_complete_cb(const lima_sig_result_t *result)
 
 static void state_signing_enter(void)
 {
-    LOG_INF("SIGNING: building LER and signing...");
+    LOG_INF("SIGNING: building LER and inner-signing...");
 
     lima_crypto_build_ler(&fsm.last_ler, &fsm.last_event);
 

@@ -86,13 +86,13 @@ Each fires independently. An attacker must defeat both sensors simultaneously to
 
 ## Hardware
 
-| Component | Part | Role |
-|---|---|---|
-| Edge Node | Nordic nRF52840 MDK USB Dongle | Sensor + crypto + BLE |
-| IMU | MPU6050 | Motion / vibration detection |
-| Barometric | BME280 | Pressure delta detection |
-| Crypto | CryptoCell-310 (on-die) | ECDSA-P256 hardware signing |
-| Gateway | Raspberry Pi Zero | BLE scanner + MQTT broker |
+| Component  | Part                           | Role                         |
+| ------------| --------------------------------| ------------------------------|
+| Edge Node  | Nordic nRF52840 MDK USB Dongle | Sensor + crypto + BLE        |
+| IMU        | MPU6050                        | Motion / vibration detection |
+| Barometric | BME280                         | Pressure delta detection     |
+| Crypto     | CryptoCell-310 (on-die)        | ECDSA-P256 hardware signing  |
+| Gateway    | Raspberry Pi Zero              | BLE scanner + MQTT broker    |
 
 ---
 
@@ -234,7 +234,7 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 - [X] Firmware: IMU + barometric sensor drivers (Zephyr I2C)
 - [X] Firmware: Event aggregator with independent OR trigger logic
 - [X] Firmware: CryptoCell-310 ECDSA-P256 signing (— ~107ms, hardware accelerated)
-- [ ] Firmware: CryptoCell-310 ECDSA-P256 encryption
+- [x] Firmware: CryptoCell-310 ECDSA-P256 encryption
 - [X] Firmware: BLE advertisement with signed payload — verified on nRF Connect
 - [ ] Gateway: BlueZ BLE scanner + paho MQTT publisher
 - [ ] Gateway: Mosquitto broker + event router
