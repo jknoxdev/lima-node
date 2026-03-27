@@ -49,3 +49,13 @@ config LIMA_RTC_LOG_LEVEL
 config LIMA_FORCE_PROVISION
     bool "Force-write provisioning epoch to DS3231 and NVS on boot"
     default n
+
+config LIMA_CRYPTO_AES_KEY_ID
+	int "PSA persistent key slot ID for AES-256-GCM encryption key"
+	default 2
+	help
+	  PSA ITS key slot for the AES-256 pre-shared key used for
+	  GCM encryption of (LER || inner_sig) in the LIMA Frame (LF).
+	  Must not conflict with CONFIG_LIMA_CRYPTO_KEY_ID (default 1).
+	  On first boot the key is generated, logged in hex, and persisted.
+	  Operator captures the hex from serial log and stores in Bitwarden.
