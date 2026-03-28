@@ -1,11 +1,31 @@
-[package]
-name = "gateway"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/lima-types",
+    "crates/gateway",
+    "crates/crypto-test",
+]
+resolver = "2"
 
-[dependencies]
-btleplug = "0.11"
-tokio = { version = "1", features = ["full"] }
-ratatui = "0.26"
+[workspace.dependencies]
+# crypto
+p256     = { version = "0.13", features = ["ecdsa", "ecdh"] }
+aes-gcm  = "0.10"
+hkdf     = "0.12"
+sha2     = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+# gateway
+btleplug  = "0.11"
+rusqlite  = { version = "0.31", features = ["bundled"] }
+ratatui   = "0.26"
 crossterm = "0.27"
-serde = { version = "1", features = ["derive"] }
+
+# web
+axum     = "0.7"
+rumqttc  = "0.24"
+
+# shared
+tokio    = { version = "1", features = ["full"] }
+serde    = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex      = "0.4"

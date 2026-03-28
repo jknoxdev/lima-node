@@ -1,0 +1,8 @@
+[package]
+name = "lima-types"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+hex   = { workspace = true }

@@ -4,7 +4,7 @@
 > Cryptographically signed integrity events from the edge to the operator.
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/jknoxdev/lima-node/render-diagrams.yml?label=diagrams&style=flat-square&color=2E75B6)](https://github.com/jknoxdev/lima-node/actions)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-AGPLv3-blue?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-nRF52840-orange?style=flat-square)](https://www.nordicsemi.com/Products/nRF52840)
 [![RTOS](https://img.shields.io/badge/RTOS-Zephyr%20%2F%20NCS-7EC8E3?style=flat-square)](https://developer.nordicsemi.com)
 [![Status](https://img.shields.io/badge/status-WIP-red?style=flat-square)](#roadmap)
@@ -252,9 +252,18 @@ Found a vulnerability? Please review our [Security Policy](SECURITY.md) before o
 
 ---
 
-## License
+L.I.M.A Node firmware is licensed under the GNU Affero General Public
+License v3 (AGPLv3). This ensures that improvements remain open and
+available to the community, including when used as part of a network service.
 
-Apache 2.0 — see [LICENSE](LICENSE)
+### Commercial Licensing
+
+Commercial licenses are required for integration into proprietary,
+commercial, industrial, or closed-source systems, platforms, or any
+use outside of the AGPLv3 open source terms.
+
+Licensing inquiries: **justin@nullsec.systems**
+See [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)
 
 ---
 

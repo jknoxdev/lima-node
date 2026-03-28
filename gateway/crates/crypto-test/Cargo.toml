@@ -1,0 +1,14 @@
+[package]
+name = "crypto-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lima-types = { path = "../lima-types" }
+p256       = { workspace = true }
+aes-gcm    = { workspace = true }
+hkdf       = { workspace = true }
+sha2       = { workspace = true }
+rand_core  = { workspace = true }
+tokio      = { workspace = true }
+hex        = { workspace = true }
