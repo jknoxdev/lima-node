@@ -2,10 +2,10 @@
 //!
 //! Pipeline:
 //!   btleplug scan → extract manufacturer payload → verify outer ECDSA sig
-//!   → store raw encrypted blob in SQLite → update ratatui TUI
+//!   → store raw encrypted blob in SQLite → publish to MQTT → update ratatui TUI
 //!
 //! Skeleton: uses hardcoded test verifying key from crypto-test.
-//! Real provisioning (key store + ECDH + AES decrypt) is next sprint.
+//! Real provisioning (key store + AES decrypt) is next sprint.
 
 use std::{
     io,
@@ -15,8 +15,6 @@ use std::{
 
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
-// use futures::StreamExt;
-
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -33,33 +31,44 @@ use ratatui::{
 use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
 use lima_types::{LF_LEN, LF_SIGNED_BYTES, LF_OFFSET_OUTER_SIG, OUTER_SIG_LEN};
+use rumqttc::{AsyncClient, MqttOptions, QoS};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// [00:00:06.082,519] <inf> lima_crypto: CRYPTO: ECDSA key found at slot 0x00000001
-// [00:00:06.106,262] <inf> lima_crypto: CRYPTO: ECDSA public key (65 bytes) — register with gateway:
-// [00:00:06.106,292] <inf> lima_crypto:   pubkey:
-//                                       04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 |.....U.. %.d!_.]H
-//                                       b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 |.....7.b .I}..{..
-//                                       f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 |........ .....6..
-//                                       8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 |./.^..Pr .>....#.
-//                                       75                                               |u                
-// [00:00:06.108,612] <inf> lima_crypto: CRYPTO: AES-256 key found at slot 0x00000002
-// [00:00:06.108,612] <inf> lima_crypto: CRYPTO: initialized — ECDSA-P256 + AES-256-GCM ready
-// [00:00:06.108,642] <inf> lima_crypto: CRYPTO:   signing key:    0x00000001
-// [00:00:06.108,642] <inf> lima_crypto: CRYPTO:   encryption key: 0x00000002
-
+// Current node public key — provisioned 2026-03-28
+// [00:00:06.106,262] <inf> lima_crypto: CRYPTO: ECDSA public key (65 bytes):
+//   04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48
+//   b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1
+//   f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99
+//   8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2
+//   75
 const TEST_NODE_PUBKEY_HEX: &str = concat!(
-    "04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 ", // |.....U.. %.d!_.]H
-    "b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 ", // |.....7.b .I}..{..
-    "f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 ", // |........ .....6..
-    "8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 ", // |./.^..Pr .>....#.
-    "75"                                                 // |u                
+    "04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 ",
+    "b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 ",
+    "f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 ",
+    "8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 ",
+    "75"
 );
 
-const DB_PATH: &str = "lima_gateway.db";
+const DB_PATH:   &str = "lima_gateway.db";
+const NODE_MAC:  &str = "hci1/dev_E3_79_63_12_EF_B1";
 
-const NODE_MAC: &str = "hci1/dev_E3_79_63_12_EF_B1";
+// ── MQTT constants ────────────────────────────────────────────────────────────
+
+const MQTT_HOST:      &str = "localhost";
+const MQTT_PORT:      u16  = 1883;
+const MQTT_CLIENT_ID: &str = "lima-gateway";
+
+// Topic schema:
+//   lima/nodes/{node_id}/frames   — raw verified LF blob (hex) per frame
+//   lima/gateway/health           — gateway online/offline (retained)
+const MQTT_TOPIC_HEALTH: &str = "lima/gateway/health";
+
+fn mqtt_topic_frames(node_id: &str) -> String {
+    // sanitize btleplug node_id ("hci1/dev_E3_79_63_12_EF_B1") for MQTT topic
+    let clean = node_id.replace('/', "-").replace('_', "-");
+    format!("lima/nodes/{}/frames", clean)
+}
 
 // ── Event record ──────────────────────────────────────────────────────────────
 
@@ -215,9 +224,9 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     let rows = app.events.iter().map(|rec| {
         // LF payload offsets (182B, company_id stripped by btleplug):
-        // [0]      proto_version  [1] event_type  [2-3] reserved
-        // [4-15]   nonce          [16-103] ciphertext (seq/timestamp inside, encrypted)
-        // [104-119] gcm_tag       [120-183] outer_sig
+        // [0]       proto_version  [1] event_type  [2-3] reserved
+        // [4-15]    nonce          [16-103] ciphertext (seq/timestamp inside, encrypted)
+        // [104-119] gcm_tag        [120-181] outer_sig
         let raw = hex::decode(&rec.raw_blob_hex).unwrap_or_default();
 
         let evt = raw.get(1)
@@ -227,7 +236,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         // seq is inside ciphertext — not visible without decryption
         let seq = "--".to_string();
 
-        // sig fingerprint — outer_sig starts at offset 120 in 182B payload
+        // outer_sig starts at offset 120 in 182B payload
         let sig_fp = if raw.len() >= 124 {
             format!("{:02X}{:02X}{:02X}{:02X}",
                 raw[120], raw[121], raw[122], raw[123])
@@ -304,7 +313,6 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(footer, chunks[2]);
 }
 
-
 fn format_timestamp(ts_ms: u64) -> String {
     let secs = ts_ms / 1000;
     let h = (secs % 86400) / 3600;
@@ -314,10 +322,12 @@ fn format_timestamp(ts_ms: u64) -> String {
 }
 
 // ── BLE task ──────────────────────────────────────────────────────────────────
+
 async fn ble_task(
     app:     Arc<Mutex<App>>,
     conn:    Arc<Mutex<Connection>>,
     vk:      Arc<VerifyingKey>,
+    mqtt:    Arc<AsyncClient>,
     adapter: Adapter,
 ) {
     use btleplug::api::CentralEvent;
@@ -335,7 +345,6 @@ async fn ble_task(
                 id,
                 manufacturer_data,
             } => {
-                // Get RSSI from peripheral properties
                 let rssi = match adapter.peripheral(&id).await {
                     Ok(p) => match p.properties().await {
                         Ok(Some(props)) => props.rssi.unwrap_or(0) as i8,
@@ -348,14 +357,12 @@ async fn ble_task(
             _ => continue,
         };
 
-
-        // Filter to LIMA node only — drop everything else immediately
+        // Filter to LIMA node only
         if address != NODE_MAC {
             continue;
         }
 
         // Filter on proto_version byte (low byte of mfr_id == 0x02)
-        // event_type lives in high byte and varies per frame — don't filter on it
         let Some((mfr_id, bytes)) = manufacturer_data.iter()
             .find(|(id, _)| (*id & 0xFF) as u8 == 0x02)
         else {
@@ -372,13 +379,14 @@ async fn ble_task(
 
         let mut rec = EventRecord {
             id: 0,
-            node_id: address,
+            node_id: address.clone(),
             received_at,
             sig_verified,
             rssi,
-            raw_blob_hex,
+            raw_blob_hex: raw_blob_hex.clone(),
         };
 
+        // ── DB write ──────────────────────────────────────────────────────────
         {
             let db = conn.lock().await;
             match db_insert(&db, &rec) {
@@ -387,6 +395,19 @@ async fn ble_task(
             }
         }
 
+        // ── MQTT publish — verified frames only ───────────────────────────────
+        if sig_verified {
+            let topic   = mqtt_topic_frames(&address);
+            let payload = format!(
+                r#"{{"node_id":"{}","received_at":{},"rssi":{},"lf":"{}"}}"#,
+                address, received_at, rssi, raw_blob_hex
+            );
+            if let Err(e) = mqtt.publish(&topic, QoS::AtLeastOnce, false, payload).await {
+                eprintln!("MQTT publish error: {}", e);
+            }
+        }
+
+        // ── TUI update ────────────────────────────────────────────────────────
         {
             let mut a = app.lock().await;
             a.push(rec);
@@ -399,7 +420,7 @@ async fn ble_task(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    // ── BLE adapter discovery (before TUI — output visible in terminal) ───────
+    // ── BLE adapter discovery ─────────────────────────────────────────────────
     eprintln!("[LIMA] Scanning for BLE adapters...");
     let manager  = Manager::new().await.expect("BLE manager failed");
     let adapters = manager.adapters().await.expect("Failed to list BLE adapters");
@@ -419,7 +440,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Prefer hci1 (ASUS BT500 — required for BLE 5.0 extended adv)
-    // hci0 is onboard Cypress chip, cannot receive extended advertisements
     let adapter_idx = adapter_infos.iter()
         .position(|info| info.contains("hci1"))
         .unwrap_or_else(|| {
@@ -440,14 +460,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Crypto init ───────────────────────────────────────────────────────────
     let verifying_key = Arc::new(load_test_verifying_key());
 
+    // ── MQTT init ─────────────────────────────────────────────────────────────
+    let mut mqtt_options = MqttOptions::new(MQTT_CLIENT_ID, MQTT_HOST, MQTT_PORT);
+    mqtt_options.set_keep_alive(Duration::from_secs(30));
+
+    let (mqtt_client, mut eventloop) = AsyncClient::new(mqtt_options, 64);
+    let mqtt_client = Arc::new(mqtt_client);
+
+    // Spawn MQTT event loop — must be polled continuously or publishes stall
+    tokio::spawn(async move {
+        loop {
+            match eventloop.poll().await {
+                Ok(_)  => {}
+                Err(e) => {
+                    eprintln!("[MQTT] event loop error: {}", e);
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            }
+        }
+    });
+
+    // Publish gateway online (retained — broker holds last value for new subscribers)
+    mqtt_client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online").await
+        .unwrap_or_else(|e| eprintln!("[MQTT] health publish error: {}", e));
+
+    eprintln!("[LIMA] MQTT connected — broker {}:{}", MQTT_HOST, MQTT_PORT);
+
     // ── App state ─────────────────────────────────────────────────────────────
     let app = Arc::new(Mutex::new(App::new()));
 
-    // ── Spawn BLE task with selected adapter ──────────────────────────────────
+    // ── Spawn BLE task ────────────────────────────────────────────────────────
     tokio::spawn(ble_task(
         Arc::clone(&app),
         Arc::clone(&conn),
         Arc::clone(&verifying_key),
+        Arc::clone(&mqtt_client),
         adapter,
     ));
 
@@ -482,6 +529,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
+
+    // Publish gateway offline before exit
+    mqtt_client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "offline").await
+        .unwrap_or_else(|e| eprintln!("[MQTT] health offline publish error: {}", e));
 
     println!("LIMA gateway stopped. DB saved to {}", DB_PATH);
     Ok(())
