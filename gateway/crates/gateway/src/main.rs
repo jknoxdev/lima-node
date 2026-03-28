@@ -13,9 +13,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral, ScanFilter};
+use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
-use futures::StreamExt;
+// use futures::StreamExt;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -32,28 +32,34 @@ use ratatui::{
 };
 use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
+use lima_types::{LF_LEN, LF_SIGNED_BYTES, LF_OFFSET_OUTER_SIG, OUTER_SIG_LEN};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// [00:00:06.075,622] <inf> lima_crypto: CRYPTO: existing key found at slot 0x00000001
-// [00:00:06.098,968] <inf> lima_crypto: CRYPTO: public key (65 bytes):
-// [00:00:06.098,999] <inf> lima_crypto:   pubkey:
-//                                       04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d |...}.M.. ....n...
-//                                       b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 |...e.Pii ...y....
-//                                       3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 |>B..f... .b..$.M.
-//                                       e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f |..,z.... H..[Y.H.
-//                                       d7                                               |.
-// [00:00:06.099,029] <inf> lima_crypto: CRYPTO: initialized — ECDSA-P256/SHA-256 ready (key_id=0x00000001)
+// [00:00:06.082,519] <inf> lima_crypto: CRYPTO: ECDSA key found at slot 0x00000001
+// [00:00:06.106,262] <inf> lima_crypto: CRYPTO: ECDSA public key (65 bytes) — register with gateway:
+// [00:00:06.106,292] <inf> lima_crypto:   pubkey:
+//                                       04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 |.....U.. %.d!_.]H
+//                                       b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 |.....7.b .I}..{..
+//                                       f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 |........ .....6..
+//                                       8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 |./.^..Pr .>....#.
+//                                       75                                               |u                
+// [00:00:06.108,612] <inf> lima_crypto: CRYPTO: AES-256 key found at slot 0x00000002
+// [00:00:06.108,612] <inf> lima_crypto: CRYPTO: initialized — ECDSA-P256 + AES-256-GCM ready
+// [00:00:06.108,642] <inf> lima_crypto: CRYPTO:   signing key:    0x00000001
+// [00:00:06.108,642] <inf> lima_crypto: CRYPTO:   encryption key: 0x00000002
 
 const TEST_NODE_PUBKEY_HEX: &str = concat!(
-    "04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d ",
-    "b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 ",
-    "3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 ",
-    "e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f ",
-    "d7"
+    "04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 ", // |.....U.. %.d!_.]H
+    "b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 ", // |.....7.b .I}..{..
+    "f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 ", // |........ .....6..
+    "8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 ", // |./.^..Pr .>....#.
+    "75"                                                 // |u                
 );
 
 const DB_PATH: &str = "lima_gateway.db";
+
+const NODE_MAC: &str = "hci1/dev_E3_79_63_12_EF_B1";
 
 // ── Event record ──────────────────────────────────────────────────────────────
 
@@ -142,47 +148,38 @@ fn load_test_verifying_key() -> VerifyingKey {
         .expect("TEST_NODE_PUBKEY_HEX invalid P-256 key")
 }
 
-/// Wire format on the wire (90 bytes total, per ble.h lima_adv_payload_t):
-/// [company_id(2) | proto_version(1) | event_type(1) | sequence(4) |
-///  timestamp_ms(4) | accel_g(4) | delta_pa(4) | node_id(6) | sig(64)]
+/// Verify ECDSA-P256 outer signature over a LIMA Frame (LF).
 ///
-/// btleplug strips company_id into the HashMap key — buffer arrives as 88 bytes:
-/// [proto_version(1) | event_type(1) | sequence(4) | timestamp_ms(4) |
-///  accel_g(4) | delta_pa(4) | node_id(6) | sig(64)]
+/// btleplug strips LF[0] (proto_version) and LF[1] (event_type) into the
+/// mfr_id HashMap key. Payload arrives as 182 bytes: LF[2..183].
+/// Reconstruct full 184B LF then verify outer_sig over LF[0..120].
 ///
-/// Signed data is lima_payload_t (24 bytes), reconstructed as firmware built it:
-/// [node_id(6) | event_type(1) | reserved(1) | sequence(4) |
-///  timestamp_ms(4) | accel_g(4) | delta_pa(4)]
-fn verify_outer_sig(payload: &[u8], vk: &VerifyingKey) -> bool {
-    // 90 bytes on wire minus 2-byte company_id stripped by btleplug
-    const ADV_LEN:     usize = 88;
-    const PAYLOAD_LEN: usize = 24;
+/// LF layout (184B):
+///   [0]       proto_version   ← stripped into mfr_id low byte
+///   [1]       event_type      ← stripped into mfr_id high byte
+///   [2-3]     reserved
+///   [4-15]    nonce (12B)
+///   [16-103]  ciphertext (88B) — opaque, never inspected here
+///   [104-119] gcm_tag (16B)
+///   [120-183] outer_sig (64B) — NOT included in signed region
+fn verify_outer_sig(mfr_id: u16, payload: &[u8], vk: &VerifyingKey) -> bool {
+    const STRIPPED_LEN: usize = LF_LEN - 2; // 182
 
-    if payload.len() < ADV_LEN {
+    if payload.len() != STRIPPED_LEN {
         return false;
     }
 
-    // Offsets after company_id strip — confirmed against ble.h
-    let event_type   = payload[1];
-    let sequence     = &payload[2..6];
-    let timestamp_ms = &payload[6..10];
-    let accel_g      = &payload[10..14];
-    let delta_pa     = &payload[14..18];
-    let node_id      = &payload[18..24];
-    let sig_bytes    = &payload[24..88];
+    // Reconstruct full 184B LF — mfr_id is little-endian in BLE
+    let mut full_lf = [0u8; LF_LEN];
+    full_lf[0] = (mfr_id & 0xFF) as u8;         // proto_version
+    full_lf[1] = ((mfr_id >> 8) & 0xFF) as u8;  // event_type
+    full_lf[2..].copy_from_slice(payload);
 
-    // Reconstruct lima_payload_t (24 bytes) exactly as firmware built it
-    let mut signed_data = [0u8; PAYLOAD_LEN];
-    signed_data[0..6].copy_from_slice(node_id);        // node_id
-    signed_data[6]    = event_type;                     // event_type
-    signed_data[7]    = 0x00;                           // reserved
-    signed_data[8..12].copy_from_slice(sequence);       // sequence
-    signed_data[12..16].copy_from_slice(timestamp_ms);  // timestamp_ms
-    signed_data[16..20].copy_from_slice(accel_g);       // accel_g
-    signed_data[20..24].copy_from_slice(delta_pa);      // delta_pa
+    let signed    = &full_lf[..LF_SIGNED_BYTES];
+    let sig_bytes = &full_lf[LF_OFFSET_OUTER_SIG..LF_OFFSET_OUTER_SIG + OUTER_SIG_LEN];
 
     match Signature::from_slice(sig_bytes) {
-        Ok(sig) => vk.verify(&signed_data, &sig).is_ok(),
+        Ok(sig) => vk.verify(signed, &sig).is_ok(),
         Err(_)  => false,
     }
 }
@@ -217,25 +214,23 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let table_header = Row::new(header_cells).height(1).bottom_margin(1);
 
     let rows = app.events.iter().map(|rec| {
-        // Parse evt, seq, sig fingerprint from raw bytes
-        // Offsets confirmed against ble.h (company_id stripped by btleplug):
-        // [0] proto_version  [1] event_type  [2..6] sequence  [24..88] sig
+        // LF payload offsets (182B, company_id stripped by btleplug):
+        // [0]      proto_version  [1] event_type  [2-3] reserved
+        // [4-15]   nonce          [16-103] ciphertext (seq/timestamp inside, encrypted)
+        // [104-119] gcm_tag       [120-183] outer_sig
         let raw = hex::decode(&rec.raw_blob_hex).unwrap_or_default();
 
         let evt = raw.get(1)
             .map(|b| format!("0x{:02X}", b))
             .unwrap_or_else(|| "?".to_string());
 
-        let seq = if raw.len() >= 6 {
-            u32::from_le_bytes([raw[2], raw[3], raw[4], raw[5]]).to_string()
-        } else {
-            "?".to_string()
-        };
+        // seq is inside ciphertext — not visible without decryption
+        let seq = "--".to_string();
 
-        let sig_fp = if raw.len() >= 28 {
-            // sig starts at offset 24 — show first 4 bytes as fingerprint
+        // sig fingerprint — outer_sig starts at offset 120 in 182B payload
+        let sig_fp = if raw.len() >= 124 {
             format!("{:02X}{:02X}{:02X}{:02X}",
-                raw[24], raw[25], raw[26], raw[27])
+                raw[120], raw[121], raw[122], raw[123])
         } else {
             "?".to_string()
         };
@@ -283,9 +278,9 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     // ── Footer ────────────────────────────────────────────────────────────────
     let last = app.events.first().map(|e| {
         let raw = hex::decode(&e.raw_blob_hex).unwrap_or_default();
-        let sig_fp = if raw.len() >= 28 {
+        let sig_fp = if raw.len() >= 124 {
             format!("{:02X}{:02X}{:02X}{:02X}",
-                raw[24], raw[25], raw[26], raw[27])
+                raw[120], raw[121], raw[122], raw[123])
         } else {
             "????".to_string()
         };
@@ -353,12 +348,21 @@ async fn ble_task(
             _ => continue,
         };
 
-        // Filter to LIMA manufacturer ID (0xFFFF)
-        let Some(bytes) = manufacturer_data.get(&0xFFFF) else {
+
+        // Filter to LIMA node only — drop everything else immediately
+        if address != NODE_MAC {
+            continue;
+        }
+
+        // Filter on proto_version byte (low byte of mfr_id == 0x02)
+        // event_type lives in high byte and varies per frame — don't filter on it
+        let Some((mfr_id, bytes)) = manufacturer_data.iter()
+            .find(|(id, _)| (*id & 0xFF) as u8 == 0x02)
+        else {
             continue;
         };
 
-        let sig_verified = verify_outer_sig(bytes, &vk);
+        let sig_verified = verify_outer_sig(*mfr_id, bytes, &vk);
         let raw_blob_hex = hex::encode(bytes);
 
         let received_at = SystemTime::now()
