@@ -85,6 +85,14 @@ fn mqtt_topic_frames(node_id: &str) -> String {
     format!("lima/nodes/{}/frames", clean)
 }
 
+// ── MQTT frame to publish ─────────────────────────────────────────────────
+struct MqttFrame {
+    topic:   String,
+    payload: String,
+    retain:  bool,
+}
+
+
 // ── Event record ──────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -357,13 +365,70 @@ async fn ntfy_notify(client: reqwest::Client, url: String) {
     }
 }
 
-// ── BLE task ──────────────────────────────────────────────────────────────────
 
+// ── MQTT task — owns retry + reconnect logic ──────────────────────────────
+async fn mqtt_task(
+    mut rx:       tokio::sync::mpsc::Receiver<MqttFrame>,
+    mqtt_options: MqttOptions,
+) {
+    const RETRY_DELAY:    Duration = Duration::from_secs(2);
+    const PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
+
+    loop {
+        // (Re)connect
+        let (client, mut eventloop) = AsyncClient::new(mqtt_options.clone(), 64);
+
+        // Drain the rumqttc event loop in a sub-task
+        let el_handle = tokio::spawn(async move {
+            loop {
+                match eventloop.poll().await {
+                    Ok(_)  => {}
+                    Err(e) => {
+                        eprintln!("[MQTT] event loop error: {e}");
+                        tokio::time::sleep(RETRY_DELAY).await;
+                    }
+                }
+            }
+        });
+
+        // Online health publish
+        let _ = client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online").await;
+
+        // Drain incoming frames until the event loop dies
+        'publish: loop {
+            match rx.recv().await {
+                None => return, // sender dropped — gateway shutting down
+                Some(frame) => {
+                    match tokio::time::timeout(
+                        PUBLISH_TIMEOUT,
+                        client.publish(&frame.topic, QoS::AtLeastOnce, frame.retain, frame.payload.clone()),
+                    ).await {
+                        Ok(Ok(_))  => {}
+                        Ok(Err(e)) => {
+                            eprintln!("[MQTT] publish error: {e} — reconnecting");
+                            break 'publish; // fall through to reconnect
+                        }
+                        Err(_) => {
+                            eprintln!("[MQTT] publish timeout — broker unreachable, reconnecting");
+                            break 'publish;
+                        }
+                    }
+                }
+            }
+        }
+
+        el_handle.abort();
+        tokio::time::sleep(RETRY_DELAY).await;
+        eprintln!("[MQTT] reconnecting...");
+    }
+}
+
+// ── BLE task ──────────────────────────────────────────────────────────────────
 async fn ble_task(
     app:     Arc<Mutex<App>>,
     conn:    Arc<Mutex<Connection>>,
     vk:      Arc<VerifyingKey>,
-    mqtt:    Arc<AsyncClient>,
+    mqtt_tx: tokio::sync::mpsc::Sender<MqttFrame>, 
     adapter: Adapter,
     ntfy_topic: String,
 ) {
@@ -377,35 +442,36 @@ async fn ble_task(
         .expect("Failed to get BLE event stream");
 
     let ntfy_client = reqwest::Client::new();
-    let ntfy_url = format!("https://ntfy.sh/{}", ntfy_topic);       
+    let ntfy_url = format!("https://ntfy.sh/{}", ntfy_topic);
     let mut last_ntfy: Option<std::time::Instant> = None;
     eprintln!("[LIMA] BLE event loop alive");
 
     while let Some(event) = events.next().await {
-        let (address, manufacturer_data, rssi) = match event {
-            CentralEvent::ManufacturerDataAdvertisement {
-                id,
-                manufacturer_data,
-            } => {
-                let rssi = match adapter.peripheral(&id).await {
-                    Ok(p) => match p.properties().await {
-                        Ok(Some(props)) => props.rssi.unwrap_or(0) as i8,
-                        _ => 0i8,
-                    },
-                    _ => 0i8,
-                };
-                (id.to_string(), manufacturer_data, rssi)
+        // ── Extract id + manufacturer_data, discard everything else ──────────
+        let (peripheral_id, manufacturer_data) = match event {
+            CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
+                (id, manufacturer_data)
             }
             _ => continue,
         };
 
-        // Filter to LIMA node only
+        // ── MAC filter FIRST — before any btleplug calls ──────────────────
+        let address = peripheral_id.to_string();
         if address != NODE_MAC {
             continue;
         }
         eprintln!("[LIMA] event received");
 
-        // Filter on proto_version byte (low byte of mfr_id == 0x02)
+        // ── RSSI lookup only for LIMA node ────────────────────────────────
+        let rssi = match adapter.peripheral(&peripheral_id).await {
+            Ok(p) => match p.properties().await {
+                Ok(Some(props)) => props.rssi.unwrap_or(0) as i8,
+                _ => 0i8,
+            },
+            _ => 0i8,
+        };
+
+        // ── proto_version filter ──────────────────────────────────────────
         let Some((mfr_id, bytes)) = manufacturer_data.iter()
             .find(|(id, _)| (*id & 0xFF) as u8 == 0x02)
         else {
@@ -429,7 +495,7 @@ async fn ble_task(
             raw_blob_hex: raw_blob_hex.clone(),
         };
 
-        // ── DB write ──────────────────────────────────────────────────────────
+        // ── DB write ──────────────────────────────────────────────────────
         {
             let db = conn.lock().await;
             match db_insert(&db, &rec) {
@@ -438,30 +504,37 @@ async fn ble_task(
             }
         }
 
-        // ── MQTT publish — verified frames only ───────────────────────────────
+        // ── MQTT publish — verified frames only, with timeout ─────────────
         if sig_verified {
-            let topic   = mqtt_topic_frames(&address);
-            let payload = format!(
-                r#"{{"node_id":"{}","received_at":{},"rssi":{},"lf":"{}"}}"#,
-                address, received_at, rssi, raw_blob_hex
-            );
-            if let Err(e) = mqtt.publish(&topic, QoS::AtLeastOnce, false, payload).await {
-                eprintln!("MQTT publish error: {}", e);
+            let frame = MqttFrame {
+                topic:   mqtt_topic_frames(&address),
+                payload: format!(
+                    r#"{{"node_id":"{}","received_at":{},"rssi":{},"lf":"{}"}}"#,
+                    address, received_at, rssi, raw_blob_hex
+                ),
+                retain: false, 
+            };
+            // try_send: non-blocking. If channel is full, log and drop — explicit policy.
+            if let Err(e) = mqtt_tx.try_send(frame) {
+                eprintln!("[MQTT] queue full, dropping frame: {e}");
             }
-
-            // ── ntfy push — opaque alert, no sensor data ─────────────────────────
+            // store to last_ntfy
             if last_ntfy.map_or(true, |t| t.elapsed().as_secs() > NTFY_DEBOUNCE_SECS) {
                 tokio::spawn(ntfy_notify(ntfy_client.clone(), ntfy_url.clone()));
-                last_ntfy = Some(std::time::Instant::now());
+                last_ntfy = Some(std::time::Instant::now());  // ← add this back
             }
+
         }
 
-        // ── TUI update ────────────────────────────────────────────────────────
+
+        // ── TUI update ────────────────────────────────────────────────────
         {
             let mut a = app.lock().await;
             a.push(rec);
         }
     }
+
+    eprintln!("[LIMA] BLE event stream ended — adapter disconnected?");
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -513,25 +586,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut mqtt_options = MqttOptions::new(MQTT_CLIENT_ID, MQTT_HOST, MQTT_PORT);
     mqtt_options.set_keep_alive(Duration::from_secs(30));
 
-    let (mqtt_client, mut eventloop) = AsyncClient::new(mqtt_options, 64);
-    let mqtt_client = Arc::new(mqtt_client);
 
-    // Spawn MQTT event loop — must be polled continuously or publishes stall
-    tokio::spawn(async move {
-        loop {
-            match eventloop.poll().await {
-                Ok(_)  => {}
-                Err(e) => {
-                    eprintln!("[MQTT] event loop error: {}", e);
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                }
-            }
-        }
-    });
+    // ── MQTT queue channel ────────────────────────────────────────────────────
+    let (mqtt_tx, mqtt_rx) = tokio::sync::mpsc::channel::<MqttFrame>(128);
 
-    // Publish gateway online (retained — broker holds last value for new subscribers)
-    mqtt_client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online").await
-        .unwrap_or_else(|e| eprintln!("[MQTT] health publish error: {}", e));
+    tokio::spawn(mqtt_task(mqtt_rx, mqtt_options));
 
     eprintln!("[LIMA] MQTT connected — broker {}:{}", MQTT_HOST, MQTT_PORT);
 
@@ -544,7 +603,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&app),
         Arc::clone(&conn),
         Arc::clone(&verifying_key),
-        Arc::clone(&mqtt_client),
+        mqtt_tx.clone(), 
         adapter,
         ntfy_topic,
     ));
@@ -563,12 +622,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             terminal.draw(|f| ui(f, &mut a))?;
         }
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.code == KeyCode::Char('q') {
-                    break;
+        // spawn_blocking keeps crossterm's blocking poll off the async runtime
+        let key = tokio::task::spawn_blocking(|| -> io::Result<Option<KeyCode>> {
+            if event::poll(Duration::from_millis(100))? {
+                if let Event::Key(key) = event::read()? {
+                    return Ok(Some(key.code));
                 }
             }
+            Ok(None)
+        }).await??;
+
+        if key == Some(KeyCode::Char('q')) {
+            break;
         }
     }
 
@@ -581,9 +646,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     terminal.show_cursor()?;
 
-    // Publish gateway offline before exit
-    mqtt_client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "offline").await
-        .unwrap_or_else(|e| eprintln!("[MQTT] health offline publish error: {}", e));
+    // ── Publish gateway offline before exit ───────────────────────────────────
+    let _ = mqtt_tx.send(MqttFrame {
+        topic:   MQTT_TOPIC_HEALTH.to_string(),
+        payload: "offline".to_string(),
+        retain:  true,
+    }).await;
+    // Give mqtt_task a moment to flush before the process exits
+    tokio::time::sleep(Duration::from_millis(300)).await;
 
     println!("LIMA gateway stopped. DB saved to {}", DB_PATH);
     Ok(())
