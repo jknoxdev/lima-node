@@ -225,7 +225,7 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 | [ADR-003](docs/architecture/adr/ADR-003-mqtt-vs-alternatives.md) | MQTT over CoAP / raw TCP / HTTP | Active |
 | [ADR-004](docs/architecture/adr/ADR-004-zephyr-vs-alternatives.md) | Zephyr RTOS over bare metal / FreeRTOS | Active |
 | [ADR-005](docs/architecture/adr/ADR-005-encrypt-everything.md) | AES-256-GCM + ECDSA-P256 on all payloads | Active |
-| [ADR-006](docs/architecture/adr/ADR-006-persistent-key-storage.md) | Persistent PSA Key Storage | Resolved |
+| [ADR-006](docs/architecture/adr/ADR-006-persistent-key-storage.md) | Persistent PSA Key Storage | Active |
 
 ---
 
@@ -236,8 +236,8 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 - [X] Firmware: CryptoCell-310 ECDSA-P256 signing (— ~107ms, hardware accelerated)
 - [x] Firmware: CryptoCell-310 ECDSA-P256 encryption
 - [X] Firmware: BLE advertisement with signed payload — verified on nRF Connect
-- [ ] Gateway: BlueZ BLE scanner + paho MQTT publisher
-- [ ] Gateway: Mosquitto broker + event router
+- [X] Gateway: BlueZ BLE scanner + paho MQTT publisher - (btleplug + rumqttc)
+- [X] Gateway: Mosquitto broker + event router 
 - [ ] Gateway: SQLite audit log + queue-and-flush egress
 - [ ] Gateway: Pushover / Pushbullet notification handler
 - [ ] Hardware: KiCad schematic for production PCB

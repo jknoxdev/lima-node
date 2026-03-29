@@ -16,3 +16,5 @@ hex        = { workspace = true }
 p256       = { workspace = true }
 futures    = { workspace = true }
 rumqttc    = { workspace = true }
+reqwest    = { workspace = true }
+dirs       = { workspace = true }
