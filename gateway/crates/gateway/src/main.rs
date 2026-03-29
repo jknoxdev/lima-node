@@ -34,6 +34,7 @@ use lima_types::{LF_LEN, LF_SIGNED_BYTES, LF_OFFSET_OUTER_SIG, OUTER_SIG_LEN};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use dirs;
 
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 // Current node public key — provisioned 2026-03-28
@@ -59,6 +60,7 @@ const NODE_MAC:  &str = "hci1/dev_E3_79_63_12_EF_B1";
 const MQTT_HOST:      &str = "localhost";
 const MQTT_PORT:      u16  = 1883;
 const MQTT_CLIENT_ID: &str = "lima-gateway";
+const NTFY_DEBOUNCE_SECS: u64 = 5;
 // const NTFY_TOPIC: &str = "333da315460b794864ff39565ab0eb777598f6000839c67ff4fb77f73c03345f"; # no oops
 
 fn load_ntfy_topic() -> String {
@@ -103,6 +105,7 @@ struct App {
     total_rx:      u64,
     total_valid:   u64,
     total_invalid: u64,
+    last_event_at: Option<u64>,
 }
 
 impl App {
@@ -113,11 +116,13 @@ impl App {
             total_rx:      0,
             total_valid:   0,
             total_invalid: 0,
+            last_event_at: None,
         }
     }
 
     fn push(&mut self, rec: EventRecord) {
         self.total_rx += 1;
+        self.last_event_at = Some(rec.received_at);
         if rec.sig_verified {
             self.total_valid += 1;
         } else {
@@ -315,8 +320,12 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     .unwrap_or_else(|| "--".to_string());
 
     let footer_title = format!(
-        " q: quit  |  DB: {}  |  last: {}  |  skeleton: no AES decrypt yet ",
-        DB_PATH, last
+        " q: quit  |  DB: {}  |  last: {}  |  last_rx: {} ",
+        DB_PATH,
+        last,
+        app.last_event_at
+            .map(|t| format_timestamp(t))
+            .unwrap_or_else(|| "--".to_string()),
     );
 
     let footer = Block::default()
@@ -332,6 +341,20 @@ fn format_timestamp(ts_ms: u64) -> String {
     let m = (secs % 3600) / 60;
     let s = secs % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
+}
+
+async fn ntfy_notify(client: reqwest::Client, url: String) {
+    if let Err(e) = client
+        .post(&url)
+        .header("Title", "LIMA")
+        .header("Priority", "high")
+        .header("Tags", "lock")
+        .body("integrity event detected")
+        .send()
+        .await
+    {
+        eprintln!("ntfy publish error: {}", e);
+    }
 }
 
 // ── BLE task ──────────────────────────────────────────────────────────────────
@@ -352,6 +375,11 @@ async fn ble_task(
 
     let mut events = adapter.events().await
         .expect("Failed to get BLE event stream");
+
+    let ntfy_client = reqwest::Client::new();
+    let ntfy_url = format!("https://ntfy.sh/{}", ntfy_topic);       
+    let mut last_ntfy: Option<std::time::Instant> = None;
+    eprintln!("[LIMA] BLE event loop alive");
 
     while let Some(event) = events.next().await {
         let (address, manufacturer_data, rssi) = match event {
@@ -375,6 +403,7 @@ async fn ble_task(
         if address != NODE_MAC {
             continue;
         }
+        eprintln!("[LIMA] event received");
 
         // Filter on proto_version byte (low byte of mfr_id == 0x02)
         let Some((mfr_id, bytes)) = manufacturer_data.iter()
@@ -420,19 +449,10 @@ async fn ble_task(
                 eprintln!("MQTT publish error: {}", e);
             }
 
-            // ── ntfy push — opaque alert, no sensor data ──────────────────────
-            let ntfy_url = format!("https://ntfy.sh/{}", ntfy_topic);
-            let client = reqwest::Client::new();
-            if let Err(e) = client
-                .post(&ntfy_url)
-                .header("Title", "LIMA")
-                .header("Priority", "high")
-                .header("Tags", "lock")
-                .body("integrity event detected")
-                .send()
-                .await
-            {
-                eprintln!("ntfy publish error: {}", e);
+            // ── ntfy push — opaque alert, no sensor data ─────────────────────────
+            if last_ntfy.map_or(true, |t| t.elapsed().as_secs() > 60) {
+                tokio::spawn(ntfy_notify(ntfy_client.clone(), ntfy_url.clone()));
+                last_ntfy = Some(std::time::Instant::now());
             }
         }
 
