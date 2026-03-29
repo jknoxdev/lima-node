@@ -58,6 +58,7 @@ const NODE_MAC:  &str = "hci1/dev_E3_79_63_12_EF_B1";
 const MQTT_HOST:      &str = "localhost";
 const MQTT_PORT:      u16  = 1883;
 const MQTT_CLIENT_ID: &str = "lima-gateway";
+const NTFY_TOPIC: &str = "333da315460b794864ff39565ab0eb777598f6000839c67ff4fb77f73c03345f";
 
 // Topic schema:
 //   lima/nodes/{node_id}/frames   — raw verified LF blob (hex) per frame
@@ -405,6 +406,21 @@ async fn ble_task(
             if let Err(e) = mqtt.publish(&topic, QoS::AtLeastOnce, false, payload).await {
                 eprintln!("MQTT publish error: {}", e);
             }
+        }
+
+        // ── ntfy push — opaque alert, no sensor data ──────────────────────
+        let ntfy_url = format!("https://ntfy.sh/{}", NTFY_TOPIC);
+        let client = reqwest::Client::new();
+        if let Err(e) = client
+            .post(&ntfy_url)
+            .header("Title", "LIMA")
+            .header("Priority", "high")
+            .header("Tags", "lock")
+            .body("integrity event detected")
+            .send()
+            .await
+        {
+            eprintln!("ntfy publish error: {}", e);
         }
 
         // ── TUI update ────────────────────────────────────────────────────────
