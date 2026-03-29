@@ -102,6 +102,7 @@ struct EventRecord {
     received_at:  u64,
     sig_verified: bool,
     rssi:         i8,
+    frame_type:   u8,  
     raw_blob_hex: String,
 }
 
@@ -153,6 +154,7 @@ fn db_init(conn: &Connection) -> rusqlite::Result<()> {
             received_at   INTEGER NOT NULL,
             sig_verified  INTEGER NOT NULL,
             rssi          INTEGER NOT NULL,
+            frame_type    INTEGER NOT NULL DEFAULT 0,
             raw_blob      BLOB    NOT NULL
         );",
     )
@@ -161,13 +163,14 @@ fn db_init(conn: &Connection) -> rusqlite::Result<()> {
 fn db_insert(conn: &Connection, rec: &EventRecord) -> rusqlite::Result<i64> {
     conn.execute(
         "INSERT INTO events
-            (node_id, received_at, sig_verified, rssi, raw_blob)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+            (node_id, received_at, sig_verified, rssi, frame_type, raw_blob)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             rec.node_id,
             rec.received_at,
             rec.sig_verified as i32,
             rec.rssi,
+            rec.frame_type as i32, 
             rec.raw_blob_hex,
         ],
     )?;
@@ -308,6 +311,8 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     )
     .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
+    // fixes missing rows from render issue
+    f.render_widget(ratatui::widgets::Clear, chunks[1]);
     f.render_stateful_widget(table, chunks[1], &mut app.table_state);
 
     // ── Footer ────────────────────────────────────────────────────────────────
@@ -365,27 +370,29 @@ async fn ntfy_notify(client: reqwest::Client, url: String) {
     }
 }
 
-
 // ── MQTT task — owns retry + reconnect logic ──────────────────────────────
 async fn mqtt_task(
     mut rx:       tokio::sync::mpsc::Receiver<MqttFrame>,
     mqtt_options: MqttOptions,
 ) {
-    const RETRY_DELAY:    Duration = Duration::from_secs(2);
+    const RETRY_DELAY:     Duration = Duration::from_secs(5);
     const PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
 
     loop {
         // (Re)connect
         let (client, mut eventloop) = AsyncClient::new(mqtt_options.clone(), 64);
 
-        // Drain the rumqttc event loop in a sub-task
-        let el_handle = tokio::spawn(async move {
+        // oneshot — eventloop sub-task signals publish loop the moment connection dies
+        let (dead_tx, mut dead_rx) = tokio::sync::oneshot::channel::<()>();
+
+        tokio::spawn(async move {
             loop {
                 match eventloop.poll().await {
                     Ok(_)  => {}
                     Err(e) => {
-                        eprintln!("[MQTT] event loop error: {e}");
-                        tokio::time::sleep(RETRY_DELAY).await;
+                        eprintln!("[MQTT] eventloop error: {e}");
+                        let _ = dead_tx.send(());
+                        return; // exit cleanly, don't retry here
                     }
                 }
             }
@@ -393,31 +400,41 @@ async fn mqtt_task(
 
         // Online health publish
         let _ = client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online").await;
+        eprintln!("[MQTT] connected to broker {}:{}", MQTT_HOST, MQTT_PORT);
 
-        // Drain incoming frames until the event loop dies
+        // Drain incoming frames until connection dies
         'publish: loop {
-            match rx.recv().await {
-                None => return, // sender dropped — gateway shutting down
-                Some(frame) => {
-                    match tokio::time::timeout(
-                        PUBLISH_TIMEOUT,
-                        client.publish(&frame.topic, QoS::AtLeastOnce, frame.retain, frame.payload.clone()),
-                    ).await {
-                        Ok(Ok(_))  => {}
-                        Ok(Err(e)) => {
-                            eprintln!("[MQTT] publish error: {e} — reconnecting");
-                            break 'publish; // fall through to reconnect
-                        }
-                        Err(_) => {
-                            eprintln!("[MQTT] publish timeout — broker unreachable, reconnecting");
-                            break 'publish;
+            tokio::select! {
+                // connection died — break immediately, don't wait for publish timeout
+                _ = &mut dead_rx => {
+                    eprintln!("[MQTT] connection lost — reconnecting");
+                    break 'publish;
+                }
+
+                frame = rx.recv() => {
+                    match frame {
+                        None => return, // sender dropped — gateway shutting down
+                        Some(frame) => {
+                            match tokio::time::timeout(
+                                PUBLISH_TIMEOUT,
+                                client.publish(&frame.topic, QoS::AtLeastOnce, frame.retain, frame.payload.clone()),
+                            ).await {
+                                Ok(Ok(_))  => {}
+                                Ok(Err(e)) => {
+                                    eprintln!("[MQTT] publish error: {e} — reconnecting");
+                                    break 'publish;
+                                }
+                                Err(_) => {
+                                    eprintln!("[MQTT] publish timeout — broker unreachable");
+                                    break 'publish;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        el_handle.abort();
         tokio::time::sleep(RETRY_DELAY).await;
         eprintln!("[MQTT] reconnecting...");
     }
@@ -491,7 +508,8 @@ async fn ble_task(
             node_id: address.clone(),
             received_at,
             sig_verified,
-            rssi,
+            rssi,    
+            frame_type: ((mfr_id >> 8) & 0xFF) as u8,
             raw_blob_hex: raw_blob_hex.clone(),
         };
 
