@@ -22,6 +22,16 @@ mosquitto_pub -t 'lima/test' -m 'hello'
 
 ![test-setup-mqtt](img/test-mqtt-setup.png)
 
+
+### local conf
+```bash
+# add to 
+# /etc/mosquitto/conf.d/lima.conf 
+allow_anonymous true
+listener 1883 localhost
+```
+
+
 > successfull MQTT should look like this: 
 
 ![mqtt-ble](img/mqtt-confirmed.png)
@@ -38,4 +48,3 @@ MQTT provides a decoupled internal bus between the gateway scanner and consumers
 (web client, future dashboards). The gateway publishes verified frames only —
 invalid sigs are dropped before reaching the broker. The broker never holds
 decryption keys.
-
