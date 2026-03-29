@@ -450,7 +450,7 @@ async fn ble_task(
             }
 
             // ── ntfy push — opaque alert, no sensor data ─────────────────────────
-            if last_ntfy.map_or(true, |t| t.elapsed().as_secs() > 60) {
+            if last_ntfy.map_or(true, |t| t.elapsed().as_secs() > NTFY_DEBOUNCE_SECS) {
                 tokio::spawn(ntfy_notify(ntfy_client.clone(), ntfy_url.clone()));
                 last_ntfy = Some(std::time::Instant::now());
             }
