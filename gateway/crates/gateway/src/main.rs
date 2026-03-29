@@ -32,6 +32,7 @@ use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
 use lima_types::{LF_LEN, LF_SIGNED_BYTES, LF_OFFSET_OUTER_SIG, OUTER_SIG_LEN};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
+use dirs;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,18 @@ const NODE_MAC:  &str = "hci1/dev_E3_79_63_12_EF_B1";
 const MQTT_HOST:      &str = "localhost";
 const MQTT_PORT:      u16  = 1883;
 const MQTT_CLIENT_ID: &str = "lima-gateway";
-const NTFY_TOPIC: &str = "333da315460b794864ff39565ab0eb777598f6000839c67ff4fb77f73c03345f";
+// const NTFY_TOPIC: &str = "333da315460b794864ff39565ab0eb777598f6000839c67ff4fb77f73c03345f"; # no oops
+
+fn load_ntfy_topic() -> String {
+    let path = dirs::home_dir()
+        .expect("no home dir")
+        .join(".lima/keys/ntfy_topic");
+    std::fs::read_to_string(&path)
+        .expect("failed to read ntfy_topic")
+        .trim()
+        .to_string()
+}
+
 
 // Topic schema:
 //   lima/nodes/{node_id}/frames   — raw verified LF blob (hex) per frame
@@ -330,6 +342,7 @@ async fn ble_task(
     vk:      Arc<VerifyingKey>,
     mqtt:    Arc<AsyncClient>,
     adapter: Adapter,
+    ntfy_topic: String,
 ) {
     use btleplug::api::CentralEvent;
     use futures::StreamExt;
@@ -406,21 +419,21 @@ async fn ble_task(
             if let Err(e) = mqtt.publish(&topic, QoS::AtLeastOnce, false, payload).await {
                 eprintln!("MQTT publish error: {}", e);
             }
-        }
 
-        // ── ntfy push — opaque alert, no sensor data ──────────────────────
-        let ntfy_url = format!("https://ntfy.sh/{}", NTFY_TOPIC);
-        let client = reqwest::Client::new();
-        if let Err(e) = client
-            .post(&ntfy_url)
-            .header("Title", "LIMA")
-            .header("Priority", "high")
-            .header("Tags", "lock")
-            .body("integrity event detected")
-            .send()
-            .await
-        {
-            eprintln!("ntfy publish error: {}", e);
+            // ── ntfy push — opaque alert, no sensor data ──────────────────────
+            let ntfy_url = format!("https://ntfy.sh/{}", ntfy_topic);
+            let client = reqwest::Client::new();
+            if let Err(e) = client
+                .post(&ntfy_url)
+                .header("Title", "LIMA")
+                .header("Priority", "high")
+                .header("Tags", "lock")
+                .body("integrity event detected")
+                .send()
+                .await
+            {
+                eprintln!("ntfy publish error: {}", e);
+            }
         }
 
         // ── TUI update ────────────────────────────────────────────────────────
@@ -504,6 +517,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── App state ─────────────────────────────────────────────────────────────
     let app = Arc::new(Mutex::new(App::new()));
+    let ntfy_topic = load_ntfy_topic();
 
     // ── Spawn BLE task ────────────────────────────────────────────────────────
     tokio::spawn(ble_task(
@@ -512,6 +526,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&verifying_key),
         Arc::clone(&mqtt_client),
         adapter,
+        ntfy_topic,
     ));
 
     // ── TUI setup ─────────────────────────────────────────────────────────────

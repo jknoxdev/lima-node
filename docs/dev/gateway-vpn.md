@@ -37,13 +37,3 @@ ip route get 8.8.8.8
 # check tailscale
 ip route get 100.64.0.0
 ```
-
-### generate topic
-```bash
-sudo apt install xxd -y
-
-# generate a few
-for i in {1..32}; do head -c 32 /dev/urandom | xxd -p | tr -d '\n'; echo; done
-
-a3f7c2e891b4d06f5a2e3c7d1f9b8e42
-```
