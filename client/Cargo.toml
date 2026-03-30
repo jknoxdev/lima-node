@@ -5,12 +5,16 @@ edition = "2021"
 
 [dependencies]
 # crypto
-aes-gcm   = "0.10"
+aes-gcm    = "0.10.3"
 
-#client
-rusqlite  = { version = "0.31", features = ["bundled"] }
-ratatui   = "0.26"
-crossterm = "0.27"
-hex       = "0.4"
-dirs      = "5"
-rpassword = "7"
+# db
+rusqlite   = { version = "0.39.0", features = ["bundled"] }
+ 
+# tui
+ratatui    = "0.30.0"
+crossterm  = "0.29.0"
+ 
+# util
+anyhow     = "1.0.102"
+hex        = "0.4.3"
+rpassword  = "7.4.0"
