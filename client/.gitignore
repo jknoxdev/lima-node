@@ -12,3 +12,6 @@ Thumbs.db
 
 # Databases
 lima_gateway.db
+*.db-shm
+*.db-wal
+*.db
