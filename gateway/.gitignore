@@ -14,4 +14,4 @@ Thumbs.db
 lima_gateway.db
 *.db-shm
 *.db-wal
-*.db
+*.db    
