@@ -46,11 +46,28 @@ pub fn last_rowid(conn: &Connection) -> Result<i64> {
     )
 }
 
+/// Verify the events table exists before entering the TUI.
+/// Returns a clear error if the DB is empty or points at the wrong file.
+pub fn check_schema(conn: &Connection) -> anyhow::Result<()> {
+    let exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='events'",
+        [],
+        |row| row.get::<_, i64>(0),
+    ).map(|n| n > 0)?;
+
+    anyhow::ensure!(
+        exists,
+        "events table not found — is the gateway running? \
+         Set LIMA_DB=/path/to/lima.db if the path differs from the default."
+    );
+    Ok(())
+}
+
 /// Fetch all events with rowid > since_rowid, ordered oldest-first.
 /// Only returns sig_verified frames — mirrors gateway publish policy.
 pub fn poll_new_frames(conn: &Connection, since_rowid: i64) -> anyhow::Result<Vec<RawFrame>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT rowid, node_id, received_at, frame_type, rssi, raw_blob
+        "SELECT rowid, node_id, received_at, event_type, rssi, raw_blob
          FROM events
          WHERE rowid > ?1
            AND sig_verified = 1

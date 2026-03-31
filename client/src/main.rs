@@ -14,10 +14,12 @@ mod display;
 use crypto::decrypt_ler;
 use db::{open_db, poll_new_frames};
 use display::{draw_ui, AppState};
+use anyhow::Context;
+
 
 /// Default path to the gateway's SQLite database.
 /// Override with LIMA_DB env var if the path differs.
-const DEFAULT_DB_PATH: &str = "/home/arx/lima-node/gateway/lima.db";
+const DEFAULT_DB_PATH: &str = "/home/arx/lima-node/gateway/lima_gateway.db";
 
 /// How often to poll the DB for new frames (ms).
 const POLL_INTERVAL_MS: u64 = 500;
@@ -43,14 +45,23 @@ pub fn resolve_db_path() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(DEFAULT_DB_PATH))
 }
 
+
+
 fn main() -> anyhow::Result<()> {
     // --- 1. Prompt for PSK (no terminal echo) ---
     let psk_hex = rpassword::prompt_password("LIMA PSK (hex): ")?;
     let key = parse_psk(&psk_hex)?;
+    eprintln!("✓  PSK accepted (32 bytes)");          // visible before TUI takes over
 
     // --- 2. Open gateway SQLite DB ---
     let db_path = resolve_db_path();
-    let conn = open_db(&db_path)?;
+    eprintln!("   DB  → {}", db_path.display());
+
+    let conn = open_db(&db_path)
+        .with_context(|| format!("failed to open DB at {}", db_path.display()))?;
+
+    db::check_schema(&conn)?;
+    eprintln!("✓  schema OK — entering TUI\n");
 
     // --- 3. Set up ratatui terminal ---
     enable_raw_mode()?;
