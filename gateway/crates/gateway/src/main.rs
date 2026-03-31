@@ -147,6 +147,8 @@ impl App {
 // ── Database ──────────────────────────────────────────────────────────────────
 
 fn db_init(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+    conn.execute_batch("PRAGMA busy_timeout=1000;")?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS events (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
