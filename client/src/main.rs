@@ -19,7 +19,7 @@ use anyhow::Context;
 
 /// Default path to the gateway's SQLite database.
 /// Override with LIMA_DB env var if the path differs.
-const DEFAULT_DB_PATH: &str = "/home/arx/lima-node/gateway/lima_gateway.db";
+const DEFAULT_DB_PATH: &str = "/home/arx/lima-node/gateway/crates/gateway/lima_gateway.db";
 
 /// How often to poll the DB for new frames (ms).
 const POLL_INTERVAL_MS: u64 = 500;
@@ -71,7 +71,12 @@ fn main() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = AppState::new();
-    let mut last_rowid: i64 = db::last_rowid(&conn).unwrap_or(0);
+
+    let mut last_rowid: i64 = if std::env::var("LIMA_LIVE").is_ok() {
+        db::last_rowid(&conn).unwrap_or(0)
+    } else {
+        0  // default: replay all verified frames on startup
+    };
 
     // --- 4. Main event + poll loop ---
     let result = run_loop(&mut terminal, &mut app, &conn, &key, &mut last_rowid);

@@ -67,7 +67,7 @@ pub fn check_schema(conn: &Connection) -> anyhow::Result<()> {
 /// Only returns sig_verified frames — mirrors gateway publish policy.
 pub fn poll_new_frames(conn: &Connection, since_rowid: i64) -> anyhow::Result<Vec<RawFrame>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT rowid, node_id, received_at, event_type, rssi, raw_blob
+        "SELECT rowid, node_id, received_at, frame_type, rssi, raw_blob
          FROM events
          WHERE rowid > ?1
            AND sig_verified = 1
