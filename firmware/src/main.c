@@ -542,7 +542,7 @@ static void sensor_thread_fn(void *p1, void *p2, void *p3)
         if (!event_fired) {
             lima_event_t tick = {
                 .type         = LIMA_EVT_POLL_TICK,
-                .timestamp_ms = k_uptime_get_32(),
+                .timestamp_ms = (uint32_t)lima_rtc_timestamp_ms(),
             };
             lima_post_event(&tick);
         }
