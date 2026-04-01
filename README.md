@@ -47,12 +47,13 @@ Security goals:
 ---
 ## Project Status
 
-✔ FSM pipeline validated  
-✔ CryptoCell ECDSA signing working  
-✔ BLE advertisement verified  
+✔ FSM pipeline validated
+✔ CryptoCell ECDSA-P256 signing + AES-256-GCM encryption working
+✔ BLE extended advertisement verified
+✔ Gateway: BLE scanner + MQTT + SQLite audit log + ntfy.sh notifications
+✔ Client: native Rust TUI with live AES-256-GCM decryption
 
-Current phase:
-Gateway receiver + MQTT + SQLite audit log
+Current phase: hardware power management + KiCad schematic
 
 ---
 ## Architecture
@@ -74,11 +75,11 @@ Gateway receiver + MQTT + SQLite audit log
 
 **Two independent threat models, one pipeline:**
 
-| Trigger | Use Case | Sensor |
-|---|---|---|
+| Trigger           | Use Case                                           | Sensor            |
+| -------------------| ----------------------------------------------------| -------------------|
 | `PRESSURE_BREACH` | Cabinet puncture, enclosure door open, seal broken | BME280 barometric |
-| `MOTION_DETECTED` | Vehicle tow, rack movement, vibration attack | MPU6050 IMU |
-| `DUAL_BREACH` | Full physical intrusion — moved AND breached | Both |
+| `MOTION_DETECTED` | Vehicle tow, rack movement, vibration attack       | MPU6050 IMU       |
+| `DUAL_BREACH`     | Full physical intrusion — moved AND breached       | Both              |
 
 Each fires independently. An attacker must defeat both sensors simultaneously to avoid detection.
 
@@ -86,13 +87,15 @@ Each fires independently. An attacker must defeat both sensors simultaneously to
 
 ## Hardware
 
-| Component  | Part                           | Role                         |
-| ------------| --------------------------------| ------------------------------|
-| Edge Node  | Nordic nRF52840 MDK USB Dongle | Sensor + crypto + BLE        |
-| IMU        | MPU6050                        | Motion / vibration detection |
-| Barometric | BME280                         | Pressure delta detection     |
-| Crypto     | CryptoCell-310 (on-die)        | ECDSA-P256 hardware signing  |
-| Gateway    | Raspberry Pi Zero              | BLE scanner + MQTT broker    |
+| Component   | Part                          | Role                          |
+| -------------| -------------------------------| -------------------------------|
+| Edge Node   | Nordic nRF52840-DK (PCA10056) | Sensor + crypto + BLE         |
+| IMU         | MPU6050                       | Motion / vibration detection  |
+| Barometric  | BME280                        | Pressure delta detection      |
+| RTC         | DS3231                        | Battery-backed wall clock     |
+| Crypto      | CryptoCell-310 (on-die)       | ECDSA-P256 + AES-256-GCM      |
+| Gateway     | Raspberry Pi 5                | BLE scanner + MQTT broker     |
+| BLE Adapter | ASUS BT500 (Realtek, hci1)    | BLE 5.0 extended adv receiver |
 
 ---
 
@@ -174,43 +177,65 @@ west flash
 
 ```
 lima-node/
-├── .github/
-│   └── workflows/                 # CI (PlantUML render, etc.)
-├── artifacts/                     # Bench captures / exports
-├── docs/
-│   ├── analysis/                  # Design notes / analysis
-│   ├── architecture/              # PlantUML sources + rendered diagrams
-│   │   ├── adr/                   # Architecture Decision Records
-│   │   ├── context.puml|svg|png
-│   │   ├── component.puml|svg|png
-│   │   ├── sequence.puml|svg|png
-│   │   ├── state.puml|svg|png
-│   │   └── overview.puml|svg|png
-│   ├── build/                     # Build / flash / dev setup
-│   │   ├── FLASHING.md
-│   │   ├── DEV_SETUP.md
-│   │   └── quickref.md
-│   └── dev/                       # Session context + dev notes
-│       └── context.md
-│   ├── logs/                      # Test logs / traces
-│   ├── media/                     # Images used in docs/README
-│   ├── resources/                 # Reference material
-│   └── verification/              # Validation notes + results
-├── firmware/                      # Zephyr firmware (nRF52840)
-│   ├── boards/
+├── firmware/                          # nRF52840 Zephyr firmware
 │   ├── src/
-│   │   ├── main.c
-│   │   ├── fsm.c
-│   │   ├── fsm.h
-│   │   └── events.h
-│   ├── CMakeLists.txt
-│   ├── Kconfig
-│   └── prj.conf
-├── LICENSE
-├── README.md
-├── SECURITY.md
-└── west.yml                       # NCS workspace manifest
+│   │   ├── main.c                     # Application entry, sensor poll loop, FSM wiring
+│   │   ├── fsm.c / fsm.h              # Full state machine — BOOT → ARMED → SIGNING → TX
+│   │   ├── crypto.c / crypto.h        # AES-256-GCM + ECDSA-P256 via CryptoCell-310
+│   │   ├── ble.c / ble.h              # BLE 5.0 extended advertising
+│   │   ├── rtc.c / rtc.h              # DS3231 RTC — wall clock, tamper detection, wakeup
+│   │   └── events.h                   # Event type definitions
+│   ├── boards/                        # Board overlays (nRF52840-DK + MDK USB Dongle)
+│   ├── tests/sensor_wire/             # I2C sensor validation test
+│   ├── tools/provision.py             # PSK + ECDSA key provisioning tool
+│   ├── Kconfig                        # LIMA-specific Kconfig symbols
+│   └── prj.conf                       # Project configuration
+│
+├── gateway/                           # Rust gateway workspace (Raspberry Pi 5)
+│   └── crates/
+│       ├── gateway/src/main.rs        # BLE scanner, sig verify, SQLite, MQTT, TUI
+│       ├── lima-types/src/lib.rs      # Wire format constants — single source of truth
+│       └── crypto-test/               # Standalone crypto verification utility
+│
+├── client/                            # Native Rust decrypt client
+│   └── src/
+│       ├── main.rs                    # PSK prompt, DB poll loop, TUI event loop
+│       ├── crypto.rs                  # AES-256-GCM decrypt pipeline + test suite
+│       ├── db.rs                      # SQLite read, ack, delete
+│       └── display.rs                 # ratatui TUI — decrypted LER display
+│
+├── docs/
+│   ├── architecture/
+│   │   ├── adr/                       # Architecture Decision Records (ADR-001 → 006)
+│   │   ├── frame-record-spec.md       # LER + LF wire format specification
+│   │   ├── *.puml                     # PlantUML source — auto-rendered on push
+│   │   └── *.png / *.svg              # Rendered diagrams
+│   ├── analysis/threat_model.md       # Threat model
+│   ├── verification/                  # FSM, I2C, RF, signal integrity validation notes
+│   └── dev/
+│       ├── context/                   # Session context files (cross-session handoff)
+│       ├── lima-ler-lf-spec.md        # LER/LF spec (dev reference)
+│       └── quickref.md                # Build + flash quick reference
+│
+├── CONTRIBUTING.md                    # How to contribute + graduation terminology 🎓
+├── SECURITY.md                        # Vulnerability disclosure policy
+├── COMMERCIAL_LICENSE.md             # Commercial licensing terms
+└── west.yml                           # NCS workspace manifest
 ```
+
+
+### Highlights
+
+| What                         | Where                                                                                                        |
+| ------------------------------| --------------------------------------------------------------------------------------------------------------|
+| Wire format spec (LER + LF)  | [`docs/architecture/frame-record-spec.md`](docs/architecture/frame-record-spec.md)                           |
+| Encrypt-then-Sign pipeline   | [`firmware/src/crypto.c`](firmware/src/crypto.c)                                                             |
+| Wire format constants (Rust) | [`gateway/crates/lima-types/src/lib.rs`](gateway/crates/lima-types/src/lib.rs)                               |
+| Gateway BLE → MQTT pipeline  | [`gateway/crates/gateway/src/main.rs`](gateway/crates/gateway/src/main.rs)                                   |
+| Client AES-256-GCM decrypt   | [`client/src/crypto.rs`](client/src/crypto.rs)                                                               |
+| FSM state machine            | [`firmware/src/fsm.c`](firmware/src/fsm.c)                                                                   |
+| ADR-005: Encrypt everything  | [`docs/architecture/adr/ADR-005-encrypt-everything.md`](docs/architecture/adr/ADR-005-encrypt-everything.md) |
+| Provisioning tool            | [`firmware/tools/provision.py`](firmware/tools/provision.py)                                                 |
 
 ---
 
