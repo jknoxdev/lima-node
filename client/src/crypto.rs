@@ -41,9 +41,9 @@ pub struct Ler {
 /// Reconstruct the full 184B LF from the 182B btleplug-stripped blob.
 /// btleplug puts proto_version and event_type into the mfr_id key,
 /// so the gateway stores the blob starting at LF[2]. We prepend
-/// proto_version (0x02) and event_type (0x00 as placeholder — we only
-/// need the header bytes to match AAD, and the gateway already verified
-/// the outer sig over the original full frame).
+/// proto_version (0x02) and the real event_type from the DB — both
+/// must match exactly what the firmware used as AAD during encryption.
+/// The gateway already verified the outer sig over the original full frame.
 ///
 /// Note: the reconstructed header bytes are used only for AAD during
 /// decryption. The outer_sig was already verified by the gateway.
