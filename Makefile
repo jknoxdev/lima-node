@@ -47,3 +47,25 @@ provision:
 	$(WEST) flash --runner jlink --build-dir $(BUILD_DIR)
 	tio -l --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log /dev/ttyACM0
 
+archive:
+	tar -czf ../arcv/lima-node.$(shell date +%Y.%V.%u).tar.gz \
+	  --exclude='.git' \
+	  --exclude='*/target' \
+	  --exclude='target' \
+	  --exclude='*/build' \
+	  --exclude='build' \
+	  --exclude='.west' \
+	  --exclude='*.elf' \
+	  --exclude='*.bin' \
+	  --exclude='*.hex' \
+	  --exclude='*.map' \
+	  --exclude='node_modules' \
+	  --exclude='*.mp4' \
+	  --exclude='*.mkv' \
+	  --exclude='*.avi' \
+	  --exclude='*.mov' \
+	  --exclude='*.webm' \
+	  --exclude='*.gif' \
+	  --exclude='*.pdf' \
+	  ./*
+
