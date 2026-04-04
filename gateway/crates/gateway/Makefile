@@ -1,5 +1,9 @@
 run:
 	sudo systemctl start mosquitto || true
+	sudo hciconfig hci0 reset
+	sleep 1
+	sudo hcitool -i hci0 lescan --duplicates &
+	sleep 1
 	cargo build
 	sudo setcap 'cap_net_raw,cap_net_admin+eip' ../../target/debug/gateway
 	cargo run
