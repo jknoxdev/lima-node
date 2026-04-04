@@ -2,6 +2,8 @@ run:
 	sudo systemctl start mosquitto || true
 	sudo hciconfig hci0 reset
 	sleep 1
+	# btleplug on Linux defaults to passive scan — cannot receive extended adv frames
+	# hcitool lescan puts hci0 into active mode; btleplug inherits the session
 	sudo hcitool -i hci0 lescan --duplicates &
 	sleep 1
 	cargo build
