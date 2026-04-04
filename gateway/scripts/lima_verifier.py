@@ -47,7 +47,7 @@ def callback(device: BLEDevice, adv: AdvertisementData):
 
 async def main():
     print(f"[*] Scanning for LIMA node {NODE_MAC}...")
-    scanner = BleakScanner(callback, adapter="hci1", scanning_mode="active")
+    scanner = BleakScanner(callback, adapter="hci0", scanning_mode="active")
     async with scanner:
         await asyncio.sleep(60)
 

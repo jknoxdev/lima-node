@@ -53,7 +53,7 @@ const TEST_NODE_PUBKEY_HEX: &str = concat!(
 );
 
 const DB_PATH:   &str = "lima_gateway.db";
-const NODE_MAC:  &str = "hci1/dev_E3_79_63_12_EF_B1";
+const NODE_MAC:  &str = "dev_E3_79_63_12_EF_B1";
 
 // ── MQTT constants ────────────────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ fn load_ntfy_topic() -> String {
 const MQTT_TOPIC_HEALTH: &str = "lima/gateway/health";
 
 fn mqtt_topic_frames(node_id: &str) -> String {
-    // sanitize btleplug node_id ("hci1/dev_E3_79_63_12_EF_B1") for MQTT topic
+    // sanitize btleplug node_id ("dev_E3_79_63_12_EF_B1") for MQTT topic
     let clean = node_id.replace('/', "-").replace('_', "-");
     format!("lima/nodes/{}/frames", clean)
 }
@@ -476,7 +476,7 @@ async fn ble_task(
 
         // ── MAC filter FIRST — before any btleplug calls ──────────────────
         let address = peripheral_id.to_string();
-        if address != NODE_MAC {
+        if !address.ends_with(NODE_MAC){
             continue;
         }
         eprintln!("[LIMA] event received");
@@ -583,9 +583,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Prefer hci1 (ASUS BT500 — required for BLE 5.0 extended adv)
     let adapter_idx = adapter_infos.iter()
-        .position(|info| info.contains("hci1"))
+        .position(|info| info.to_lowercase().contains("hci0"))
         .unwrap_or_else(|| {
-            eprintln!("[LIMA] WARNING: hci1 not found, falling back to adapter 0");
+            eprintln!("[LIMA] WARNING: hci0 not found, falling back to adapter 1");
             0
         });
 

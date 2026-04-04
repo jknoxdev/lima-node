@@ -26,9 +26,16 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from cryptography.hazmat.primitives.asymmetric import ec
 
 NODE_MAC = "E3:79:63:12:EF:B1"
+# 26w12 key
+# NODE_PUBKEY_HEX = (
+#     "048da87d0a4ddfc416c401826ed8ea0db29ec36513506969b88c8379de06e3103e"
+#     "42a39e66e8f3e7aa62d2aa24184d88e11f2c7aaa9de8a04884905b59ed487fd7"
+# )
+
+# 26w14
 NODE_PUBKEY_HEX = (
-    "048da87d0a4ddfc416c401826ed8ea0db29ec36513506969b88c8379de06e3103e"
-    "42a39e66e8f3e7aa62d2aa24184d88e11f2c7aaa9de8a04884905b59ed487fd7"
+    "04e5cba4c85504fc25ca64215f895d48b7871398d237d9621a497dbdb47b94d1f19"
+    "8fffff98b9d0a1ca69ff7cb3690998e2fa45e86035072d93ec79fd6c723e275"
 )
 
 # ── LF layout constants ───────────────────────────────────────────────────────
@@ -102,7 +109,8 @@ def callback(device: BLEDevice, adv: AdvertisementData):
 
     for mfr_id, raw in adv.manufacturer_data.items():
         # strip company_id (2B) prepended by bleak — LF starts after
-        lf = raw  # bleak strips company_id, raw = LF bytes
+        # lf = raw  # bleak strips company_id, raw = LF bytes
+        lf = bytes([mfr_id & 0xFF, (mfr_id >> 8) & 0xFF]) + raw
         if len(lf) != LF_LEN:
             print(f"[LIMA] unexpected len={len(lf)} (expected {LF_LEN}) — skipping")
             continue
@@ -127,7 +135,7 @@ async def main():
     print(f"[*] LIMA gateway scanner — listening for node {NODE_MAC}")
     print(f"[*] Role: outer sig verify only — no decryption keys held here")
     print()
-    scanner = BleakScanner(callback, adapter="hci1", scanning_mode="active")
+    scanner = BleakScanner(callback, adapter="hci0", scanning_mode="active")
     async with scanner:
         await asyncio.sleep(9000)
 
