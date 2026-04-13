@@ -19,6 +19,8 @@
 
 ---
 
+![lima-node-arch](docs/architecture/lima_architecture_node_gateway_phone.svg)
+
 ## What is LIMA?
 LIMA nodes are small, battery-powered sensors that detect physical integrity events — door opens, enclosure breaches, vehicle towing, cabinet punctures — and deliver cryptographically signed alerts to a local gateway, which routes them to operators via push notification, SIEM, or cloud audit trail.
 
