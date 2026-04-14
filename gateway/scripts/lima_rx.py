@@ -135,7 +135,7 @@ async def main():
     print(f"[*] LIMA gateway scanner — listening for node {NODE_MAC}")
     print(f"[*] Role: outer sig verify only — no decryption keys held here")
     print()
-    scanner = BleakScanner(callback, adapter="hci0", scanning_mode="active")
+    scanner = BleakScanner(callback, adapter="hci1", scanning_mode="active")
     async with scanner:
         await asyncio.sleep(9000)
 

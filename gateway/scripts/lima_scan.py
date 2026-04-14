@@ -15,7 +15,7 @@ async def main():
     print(f"[*] Scanning for LIMA node {NODE_MAC}...")
     scanner = BleakScanner(
         callback,
-        adapter="hci0",
+        adapter="hci1",
         scanning_mode="active"
     )
     async with scanner:

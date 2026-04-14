@@ -583,9 +583,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Prefer hci1 (ASUS BT500 — required for BLE 5.0 extended adv)
     let adapter_idx = adapter_infos.iter()
-        .position(|info| info.to_lowercase().contains("hci0"))
+        .position(|info| info.to_lowercase().contains("hci1"))
         .unwrap_or_else(|| {
-            eprintln!("[LIMA] WARNING: hci0 not found, falling back to adapter 1");
+            eprintln!("[LIMA] WARNING: hci1 not found, falling back to adapter 0");
             0
         });
 
