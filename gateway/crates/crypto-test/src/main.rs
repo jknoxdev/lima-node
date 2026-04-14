@@ -6,7 +6,7 @@
 //!   2. Generate ephemeral gateway keypair
 //!   3. ECDH → shared secret
 //!   4. HKDF-SHA256 → AES-256-GCM key
-//!   5. Build fake LimaPayload
+//!   5. Build fake LimaEventRecord
 //!   6. ECDSA-P256 sign payload (inner sig)
 //!   7. AES-256-GCM encrypt (payload || inner_sig)
 //!   8. ECDSA-P256 sign (nonce || ciphertext || tag) (outer sig)
@@ -23,8 +23,8 @@ use aes_gcm::{
 };
 use hkdf::Hkdf;
 use lima_types::{
-    LimaEventType, LimaPayload, HKDF_INFO, INNER_SIG_LEN, NONCE_LEN,
-    PAYLOAD_LEN, TAG_LEN,
+    LimaEventType, LimaEventRecord, HKDF_INFO, INNER_SIG_LEN, NONCE_LEN,
+    LER_LEN, TAG_LEN,
 };
 use p256::{
     ecdh::EphemeralSecret,
@@ -115,9 +115,9 @@ fn main() {
     ok("HKDF-SHA256 key derivation complete");
 
     // ── Step 3: Build payload ─────────────────────────────────────────────────
-    section("STEP 3: Build LimaPayload");
+    section("STEP 3: Build LimaEventRecord");
 
-    let payload = LimaPayload {
+    let payload = LimaEventRecord {
         node_id:      [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01],
         event_type:   LimaEventType::DualBreach as u8,
         reserved:     0x00,
@@ -128,7 +128,7 @@ fn main() {
     };
 
     let payload_bytes = payload.to_bytes();
-    hex_dump("LimaPayload (plaintext)", &payload_bytes);
+    hex_dump("LimaEventRecord (plaintext)", &payload_bytes);
     println!("  node_id:      {}", payload.node_id_str());
     println!("  event_type:   0x{:02X} ({:?})", payload.event_type,
              LimaEventType::from(payload.event_type));
@@ -136,7 +136,7 @@ fn main() {
     println!("  timestamp_ms: {}", payload.timestamp_ms);
     println!("  accel_g:      {:.3}", payload.accel_g);
     println!("  delta_pa:     {:.3}", payload.delta_pa);
-    ok("LimaPayload built");
+    ok("LimaEventRecord built");
 
     // ── Step 4: Inner ECDSA sign ──────────────────────────────────────────────
     section("STEP 4: Inner ECDSA-P256 Sign (payload → inner_sig)");
@@ -147,9 +147,9 @@ fn main() {
     ok("payload signed with node ECDSA key (inner sig)");
 
     // Build plaintext: payload || inner_sig
-    let mut plaintext = [0u8; PAYLOAD_LEN + INNER_SIG_LEN];
-    plaintext[..PAYLOAD_LEN].copy_from_slice(&payload_bytes);
-    plaintext[PAYLOAD_LEN..].copy_from_slice(inner_sig_bytes.as_slice());
+    let mut plaintext = [0u8; LER_LEN + INNER_SIG_LEN];
+    plaintext[..LER_LEN].copy_from_slice(&payload_bytes);
+    plaintext[LER_LEN..].copy_from_slice(inner_sig_bytes.as_slice());
     hex_dump("plaintext (payload || inner_sig)", &plaintext);
 
     // ── Step 5: AES-256-GCM encrypt ──────────────────────────────────────────
@@ -233,10 +233,10 @@ fn main() {
     // ── Step 9: Gateway — verify inner sig ───────────────────────────────────
     section("STEP 9: Gateway — Verify Inner Signature");
 
-    let dec_payload_bytes: &[u8; 24] = decrypted[..PAYLOAD_LEN]
+    let dec_payload_bytes: &[u8; 24] = decrypted[..LER_LEN]
         .try_into()
         .expect("decrypted payload wrong size");
-    let dec_sig_bytes = &decrypted[PAYLOAD_LEN..PAYLOAD_LEN + INNER_SIG_LEN];
+    let dec_sig_bytes = &decrypted[LER_LEN..LER_LEN + INNER_SIG_LEN];
 
     let dec_inner_sig = Signature::from_slice(dec_sig_bytes)
         .expect("inner sig parse failed");
@@ -249,7 +249,7 @@ fn main() {
     // ── Step 10: Assert round-trip integrity ──────────────────────────────────
     section("STEP 10: Assert Round-Trip Integrity");
 
-    let recovered = LimaPayload::from_bytes(dec_payload_bytes);
+    let recovered = LimaEventRecord::from_bytes(dec_payload_bytes);
 
     assert_eq!(payload_bytes, *dec_payload_bytes, "payload bytes mismatch");
     assert_eq!(payload.sequence,     recovered.sequence,     "sequence mismatch");

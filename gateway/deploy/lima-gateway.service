@@ -1,0 +1,20 @@
+[Unit]
+Description=LIMA Gateway — BLE integrity monitor
+After=network.target bluetooth.service mosquitto.service
+Wants=bluetooth.service mosquitto.service
+
+[Service]
+Type=simple
+User=arx
+WorkingDirectory=/home/arx/lima-node/gateway/crates/gateway
+ExecStartPre=/bin/sleep 3
+ExecStart=/home/arx/lima-node/gateway/target/release/gateway --headless
+Restart=on-failure
+RestartSec=5
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
