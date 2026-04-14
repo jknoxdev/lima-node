@@ -30,6 +30,7 @@ use ratatui::{
 };
 use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
+use tokio::signal::unix::{signal, SignalKind};
 use lima_types::{LF_LEN, LF_SIGNED_BYTES, LF_OFFSET_OUTER_SIG, OUTER_SIG_LEN};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use dirs;
@@ -53,7 +54,7 @@ const TEST_NODE_PUBKEY_HEX: &str = concat!(
 );
 
 const DB_PATH:   &str = "lima_gateway.db";
-const NODE_MAC:  &str = "hci1/dev_E3_79_63_12_EF_B1";
+const NODE_MAC:  &str = "dev_E3_79_63_12_EF_B1";
 
 // ── MQTT constants ────────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ fn load_ntfy_topic() -> String {
 const MQTT_TOPIC_HEALTH: &str = "lima/gateway/health";
 
 fn mqtt_topic_frames(node_id: &str) -> String {
-    // sanitize btleplug node_id ("hci1/dev_E3_79_63_12_EF_B1") for MQTT topic
+    // sanitize btleplug node_id ("dev_E3_79_63_12_EF_B1") for MQTT topic
     let clean = node_id.replace('/', "-").replace('_', "-");
     format!("lima/nodes/{}/frames", clean)
 }
@@ -476,7 +477,7 @@ async fn ble_task(
 
         // ── MAC filter FIRST — before any btleplug calls ──────────────────
         let address = peripheral_id.to_string();
-        if address != NODE_MAC {
+        if !address.ends_with(NODE_MAC){
             continue;
         }
         eprintln!("[LIMA] event received");
@@ -562,6 +563,8 @@ async fn ble_task(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
+    let headless = std::env::args().any(|a| a == "--headless");
+
     // ── BLE adapter discovery ─────────────────────────────────────────────────
     eprintln!("[LIMA] Scanning for BLE adapters...");
     let manager  = Manager::new().await.expect("BLE manager failed");
@@ -583,7 +586,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Prefer hci1 (ASUS BT500 — required for BLE 5.0 extended adv)
     let adapter_idx = adapter_infos.iter()
-        .position(|info| info.contains("hci1"))
+        .position(|info| info.to_lowercase().contains("hci1"))
         .unwrap_or_else(|| {
             eprintln!("[LIMA] WARNING: hci1 not found, falling back to adapter 0");
             0
@@ -628,43 +631,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ntfy_topic,
     ));
 
-    // ── TUI setup ─────────────────────────────────────────────────────────────
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend      = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // ── TUI event loop ────────────────────────────────────────────────────────
-    loop {
-        {
-            let mut a = app.lock().await;
-            terminal.draw(|f| ui(f, &mut a))?;
+    if headless {
+        eprintln!("[LIMA] running headless — waiting for SIGTERM or SIGINT");
+        let mut sigterm = signal(SignalKind::terminate())?;
+        tokio::select! {
+            _ = sigterm.recv()         => eprintln!("[LIMA] SIGTERM received"),
+            _ = tokio::signal::ctrl_c() => eprintln!("[LIMA] SIGINT received"),
         }
+    } else {
 
-        // spawn_blocking keeps crossterm's blocking poll off the async runtime
-        let key = tokio::task::spawn_blocking(|| -> io::Result<Option<KeyCode>> {
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    return Ok(Some(key.code));
-                }
+        // ── TUI setup ─────────────────────────────────────────────────────────────
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend      = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+
+
+
+        // ── TUI event loop ────────────────────────────────────────────────────────
+        loop {
+            {
+                let mut a = app.lock().await;
+                terminal.draw(|f| ui(f, &mut a))?;
             }
-            Ok(None)
-        }).await??;
 
-        if key == Some(KeyCode::Char('q')) {
-            break;
+            // spawn_blocking keeps crossterm's blocking poll off the async runtime
+            let key = tokio::task::spawn_blocking(|| -> io::Result<Option<KeyCode>> {
+                if event::poll(Duration::from_millis(100))? {
+                    if let Event::Key(key) = event::read()? {
+                        return Ok(Some(key.code));
+                    }
+                }
+                Ok(None)
+            }).await??;
+
+            if key == Some(KeyCode::Char('q')) {
+                break;
+            }
         }
-    }
 
-    // ── TUI teardown ──────────────────────────────────────────────────────────
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+        // ── TUI teardown ──────────────────────────────────────────────────────────
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+    }
 
     // ── Publish gateway offline before exit ───────────────────────────────────
     let _ = mqtt_tx.send(MqttFrame {
