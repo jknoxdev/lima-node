@@ -15,9 +15,11 @@
 > ---
 > Active development.
 >
-> Current phase: gateway receiver + MQTT + SQLite audit log.
+> Current phase: hardware power management + KiCad schematic.
 
 ---
+
+![lima-node-arch](docs/architecture/lima_architecture_node_gateway_phone.svg)
 
 ## What is LIMA?
 LIMA nodes are small, battery-powered sensors that detect physical integrity events — door opens, enclosure breaches, vehicle towing, cabinet punctures — and deliver cryptographically signed alerts to a local gateway, which routes them to operators via push notification, SIEM, or cloud audit trail.
@@ -111,7 +113,7 @@ Each fires independently. An attacker must defeat both sensors simultaneously to
 - **Sleep:** `LIGHT_SLEEP → DEEP_SLEEP → RTC wakeup` cycle validated
 
 ### Current Phase
-Gateway receiver — BlueZ BLE scanner, MQTT publisher, SQLite audit log.
+Hardware power management + KiCad schematic for production PCB.
 
 ---
 
@@ -144,7 +146,7 @@ Gateway receiver — BlueZ BLE scanner, MQTT publisher, SQLite audit log.
 └──────────────────────────────────┘
 ```
 
-**NCS Version:** v3.2.0-rc1 · **Zephyr:** 4.3.99 · **Board:** `nrf52840_mdk_usb_dongle/nrf52840`
+**NCS Version:** v3.2.2 · **Zephyr:** 4.2.99 · **Board:** `nrf52840dk/nrf52840`
 
 ---
 
@@ -164,7 +166,7 @@ pip install -r zephyr/scripts/requirements.txt
 pip install -r nrf/scripts/requirements.txt
 
 # 3. Build
-west build -b nrf52840_mdk_usb_dongle/nrf52840 lima-node/firmware \
+west build -b nrf52840dk/nrf52840 lima-node/firmware \
   -- -DCONFIG_BUILD_OUTPUT_UF2=y
 
 # 4. Flash (dongle in bootloader mode)
@@ -263,8 +265,8 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 - [X] Firmware: BLE advertisement with signed payload — verified on nRF Connect
 - [X] Gateway: BlueZ BLE scanner + paho MQTT publisher - (btleplug + rumqttc)
 - [X] Gateway: Mosquitto broker + event router 
-- [ ] Gateway: SQLite audit log + queue-and-flush egress
-- [ ] Gateway: Pushover / Pushbullet notification handler
+- [X] Gateway: SQLite audit log + queue-and-flush egress
+- [X] Gateway: (Pushover) ntfy.sh push notification handler
 - [ ] Hardware: KiCad schematic for production PCB
 - [ ] Hardware: Power budget analysis + battery life model
 - [ ] Docs: Threat model diagram
