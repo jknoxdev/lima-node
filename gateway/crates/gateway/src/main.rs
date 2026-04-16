@@ -558,6 +558,30 @@ async fn ble_task(
     eprintln!("[LIMA] BLE event stream ended — adapter disconnected?");
 }
 
+fn find_realtek_hci_index() -> Option<usize> {
+    let output = std::process::Command::new("hciconfig")
+        .arg("-a")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    eprintln!("[REALTEK] hciconfig output:\n{}", text);
+    let mut current_idx: Option<usize> = None;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("hci") {
+            if let Some(idx_str) = rest.split(|c: char| !c.is_ascii_digit()).next() {
+                current_idx = idx_str.trim().parse().ok();
+                eprintln!("[REALTEK] parsed hci index: {:?}", current_idx);
+            }
+        }
+        if line.contains("A0:AD:9F:71:13:98") {
+            eprintln!("[REALTEK] found BD address on line: {:?}", line);
+            return current_idx;
+        }
+    }
+    eprintln!("[REALTEK] BD address not found in output");
+    None
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -584,18 +608,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         adapter_infos.push(info);
     }
 
-    // Prefer hci1 (ASUS BT500 — required for BLE 5.0 extended adv)
-    let adapter_idx = adapter_infos.iter()
-        .position(|info| info.to_lowercase().contains("hci1"))
-        .unwrap_or_else(|| {
-            eprintln!("[LIMA] WARNING: hci1 not found, falling back to adapter 0");
+    // Prefer Realtek adapter (ASUS BT500 — required for BLE 5.0 extended adv)
+    let realtek_hci = find_realtek_hci_index();
+    let adapter_idx = match realtek_hci {
+        Some(hci_idx) => {
+            adapter_infos.iter()
+                .position(|info| info.contains(&format!("hci{}", hci_idx)))
+                .unwrap_or_else(|| {
+                    eprintln!("[LIMA] WARNING: Realtek hci{} not in btleplug list, falling back to 0", hci_idx);
+                    0
+                })
+        }
+        None => {
+            eprintln!("[LIMA] WARNING: Realtek adapter not found via hciconfig, falling back to 0");
             0
-        });
+        }
+    };
+
 
     let adapter = adapters.into_iter().nth(adapter_idx)
         .expect("No BLE adapter found");
-
     eprintln!("[LIMA] Using adapter {}: {}", adapter_idx, adapter_infos[adapter_idx]);
+
 
     // ── DB init ───────────────────────────────────────────────────────────────
     let conn = Connection::open(DB_PATH)?;
