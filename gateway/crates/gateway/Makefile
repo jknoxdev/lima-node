@@ -14,6 +14,12 @@ build:
 	cargo build
 	sudo setcap 'cap_net_raw,cap_net_admin+eip' ../../target/debug/gateway
 
+headless:
+	cargo build	
+	sudo setcap 'cap_net_raw,cap_net_admin+eip' ../../target/debug/gateway
+	sudo hciconfig hci1 down
+	../../target/debug/gateway --headless
+
 release:
 	cargo build --release
 	sudo setcap 'cap_net_raw,cap_net_admin+eip' ../../target/release/gateway
@@ -29,3 +35,24 @@ mqtt-status:
 
 mqtt-log:
 	mosquitto_sub -t 'lima/#' -v
+
+deploy: 
+	sudo cp ../../deploy/lima-gateway.service /etc/systemd/system/lima-gateway.service
+	sudo systemctl daemon-reload
+	sudo systemctl restart lima-gateway
+	sudo systemctl status lima-gateway || true
+
+radiomon:
+	sudo hcitool -i hci1 cmd 0x08 0x000c 0x00 0x00
+	sudo hcitool -i hci1 cmd 0x08 0x000b 0x01 0x00 0xa0 0x00 0x50 0x00 0x00 0x00
+	sudo hcitool -i hci1 cmd 0x08 0x000c 0x01 0x01
+	sudo systemctl daemon-reload
+	sudo systemctl restart lima-gateway
+	sudo systemctl status lima-gateway || true
+	sudo journalctl -u lima-gateway -f
+
+mon: 
+	sudo systemctl daemon-reload
+	sudo systemctl restart lima-gateway
+	sudo systemctl status lima-gateway || true
+	sudo journalctl -u lima-gateway -f
