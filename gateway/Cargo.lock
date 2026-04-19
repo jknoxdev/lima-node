@@ -681,6 +681,7 @@ dependencies = [
  "dirs",
  "futures",
  "hex",
+ "libc",
  "lima-types",
  "p256",
  "ratatui",

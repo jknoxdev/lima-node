@@ -17,7 +17,6 @@ use std::{
     io,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
 use crossterm::{
@@ -36,7 +35,6 @@ use ratatui::{
 use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::io::unix::AsyncFd;
 use lima_types::{LF_LEN, LF_SIGNED_BYTES, LF_OFFSET_OUTER_SIG, OUTER_SIG_LEN};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use dirs;
@@ -45,6 +43,7 @@ use dirs;
 
 const BTPROTO_HCI:          i32 = 1;
 const HCI_CHANNEL_RAW:      u16 = 0;
+const HCI_CHANNEL_USER:     u16 = 1;
 const SOL_HCI:              i32 = 0;
 const HCI_FILTER_SOCKOPT:   i32 = 2;
 const HCI_EVENT_PKT:        u32 = 4;   // packet type byte
@@ -497,7 +496,7 @@ fn hci_open_raw(hci_dev: u16) -> libc::c_int {
         let addr = SockAddrHci {
             hci_family:  libc::AF_BLUETOOTH as u16,
             hci_dev,
-            hci_channel: HCI_CHANNEL_RAW,
+            hci_channel: HCI_CHANNEL_USER,
         };
         let ret = libc::bind(
             sock,
@@ -526,12 +525,12 @@ fn hci_open_raw(hci_dev: u16) -> libc::c_int {
             std::mem::size_of::<HciFilter>() as libc::socklen_t,
         );
         if ret < 0 {
-            eprintln!("[HCI] setsockopt(HCI_FILTER) failed: {}", std::io::Error::last_os_error());
-            libc::close(sock);
-            return -1;
+            // Non-fatal on recent kernels — HCI_FILTER may not be supported on
+            // HCI_CHANNEL_RAW. Software filtering in parse_ext_adv_report is sufficient.
+            eprintln!("[HCI] setsockopt(HCI_FILTER) unsupported ({}), continuing without kernel filter",
+                      std::io::Error::last_os_error());
         }
-
-        sock
+        sock 
     }
 }
 
@@ -545,22 +544,27 @@ fn hci_open_raw(hci_dev: u16) -> libc::c_int {
 /// Errors are logged but not fatal; if the adapter is already scanning the
 /// events will arrive anyway.
 fn hci_start_ext_scan(sock: libc::c_int) {
+    
+    // HCI Reset (0x0C03)
+    // let reset_cmd: [u8; 4] = [HCI_COMMAND_PKT, 0x03, 0x0C, 0x00];
+    // unsafe { libc::write(sock, reset_cmd.as_ptr() as *const libc::c_void, 4); }
+    // std::thread::sleep(Duration::from_millis(500)); // wait for controller ready
+    
     // ── LE Set Extended Scan Parameters (0x2041) ──────────────────────────
     // 8 parameter bytes for 1M PHY only:
     //   own_addr_type(1) + filter_policy(1) + scanning_phys(1)
     //   + [1M: scan_type(1) + interval(2) + window(2)]
     let params_cmd: [u8; 12] = [
-        HCI_COMMAND_PKT,                         // HCI packet type
+        HCI_COMMAND_PKT,
         (HCI_LE_SET_EXT_SCAN_PARAMS & 0xFF) as u8,
         (HCI_LE_SET_EXT_SCAN_PARAMS >> 8)   as u8,
         8,          // parameter length
         0x00,       // Own_Address_Type: public
         0x00,       // Scanning_Filter_Policy: accept all
-        0x01,       // Scanning_PHYs: 1M
-        // 1M PHY entry:
-        0x00,       // Scan_Type: passive (0x01 = active)
-        0x30, 0x00, // Scan_Interval: 48 × 0.625ms = 30ms
-        0x30, 0x00, // Scan_Window:   30ms (100% duty cycle)
+        0x01,       // Scanning_PHYs: 1M only
+        0x00,       // Scan_Type: passive
+        0x30, 0x00, // Scan_Interval: 30ms
+        0x30, 0x00, // Scan_Window: 30ms
     ];
 
     unsafe {
@@ -690,22 +694,30 @@ fn parse_ext_adv_report<'a>(
         const REPORT_HDR: usize = 24;
         if pkt.len() < offset + REPORT_HDR { return None; }
 
-        let rssi_raw = pkt[offset + 6];
+        let rssi_raw = pkt[offset + 13];
         let rssi = if rssi_raw == 0x7F { 0i8 } else { rssi_raw as i8 };
 
-        // Address bytes [+17..+23], little-endian (LSB first in wire)
         // E3:79:63:12:EF:B1 → wire [B1, EF, 12, 63, 79, E3]
-        let addr = &pkt[offset + 17..offset + 23];
+        let addr = &pkt[offset + 3..offset + 9];        
         let mac = format!(
             "dev_{:02X}_{:02X}_{:02X}_{:02X}_{:02X}_{:02X}",
             addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]
         );
-
         let data_length = pkt[offset + 23] as usize;
+        
         if pkt.len() < offset + REPORT_HDR + data_length {
             return None;
         }
         let ad_data = &pkt[offset + REPORT_HDR..offset + REPORT_HDR + data_length];
+        
+        if mac != node_mac {
+            offset += REPORT_HDR + data_length;
+            continue;
+        }
+        eprintln!("[HCI] ext adv report from {}", mac);
+
+
+
 
         // MAC filter — skip to next report if not our node
         if mac != node_mac {
@@ -759,67 +771,101 @@ async fn hci_scan_task(
     // Fire-and-forget: errors are logged inside hci_start_ext_scan.
     // If the adapter is already scanning (bluetoothd / Makefile pre-roll),
     // these commands are benign — they re-apply scan params and keep going.
+
     hci_start_ext_scan(sock_raw);
 
-    // ── Set non-blocking, wrap in AsyncFd ────────────────────────────────
-    unsafe {
-        let flags = libc::fcntl(sock_raw, libc::F_GETFL);
-        libc::fcntl(sock_raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
-    }
-
-    // SAFETY: sock_raw is a valid open fd from hci_open_raw above.
-    // OwnedFd takes ownership and will close it on drop.
-    let owned = unsafe { OwnedFd::from_raw_fd(sock_raw) };
-    let async_fd = match AsyncFd::new(owned) {
-        Ok(fd) => fd,
-        Err(e) => {
-            eprintln!("[HCI] AsyncFd::new failed: {}", e);
-            return;
+    // ── Blocking reader thread ────────────────────────────────────────────
+    let (pkt_tx, mut pkt_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
+    
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 512];
+        eprintln!("[HCI] reader thread alive");
+        loop {
+            let n = unsafe {
+                libc::read(sock_raw, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
+            };
+            if n < 0 {
+                eprintln!("[HCI] read error: {}", std::io::Error::last_os_error());
+                break;
+            }
+            // eprintln!("[HCI] read {} bytes pkt={:02X?}", n, &buf[..n as usize]);
+            if pkt_tx.blocking_send(buf[..n as usize].to_vec()).is_err() {
+                break;
+            }
         }
-    };
+    });
 
+    // ── Set non-blocking, wrap in AsyncFd ────────────────────────────────
+    // unsafe {
+    //     let flags = libc::fcntl(sock_raw, libc::F_GETFL);
+    //     libc::fcntl(sock_raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    // }
+
+    // // SAFETY: sock_raw is a valid open fd from hci_open_raw above.
+    // // OwnedFd takes ownership and will close it on drop.
+    // let owned = unsafe { OwnedFd::from_raw_fd(sock_raw) };
+    // let async_fd = match AsyncFd::new(owned) {
+    //     Ok(fd) => fd,
+    //     Err(e) => {
+    //         eprintln!("[HCI] AsyncFd::new failed: {}", e);
+    //         return;
+    //     }
+    // };
+    
+    // ── Async pipeline loop ───────────────────────────────────────────────
     let ntfy_client = reqwest::Client::new();
     let ntfy_url    = format!("https://ntfy.sh/{}", ntfy_topic);
     let mut last_ntfy: Option<std::time::Instant> = None;
 
     eprintln!("[HCI] scan loop alive — hci{} / subevent 0x0D", hci_dev);
 
+
     // Buffer large enough for any LE Extended Advertising event.
     // LF=184B + AD overhead + HCI headers ≈ 215B; 512 is comfortable.
-    let mut buf = [0u8; 512];
+    // let mut buf = [0u8; 512];
+
+    eprintln!("[HCI] entering read loop");
 
     loop {
-        // Wait until the socket is readable
-        let mut guard = match async_fd.readable().await {
-            Ok(g)  => g,
-            Err(e) => {
-                eprintln!("[HCI] readable() error: {}", e);
-                break;
-            }
-        };
+        // // Wait until the socket is readable
+        // let mut guard = match async_fd.readable().await {
+        //     Ok(g)  => g,
+        //     Err(e) => {
+        //         eprintln!("[HCI] readable() error: {}", e);
+        //         break;
+        //     }
+        // };
 
-        let fd = guard.get_inner().as_raw_fd();
-        let n = unsafe {
-            libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) as isize
-        };
+        // let fd = guard.get_inner().as_raw_fd();
+        // let n = unsafe {
+        //     libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) as isize
+        // };
 
-        if n < 0 {
-            let err = std::io::Error::last_os_error();
-            if err.raw_os_error() == Some(libc::EAGAIN)
-                || err.raw_os_error() == Some(libc::EWOULDBLOCK)
-            {
-                guard.clear_ready();
-        continue;
-        }
-        eprintln!("[HCI] read error: {}", err);
-            break;
-        }
+        // eprintln!("[HCI] read {} bytes, pkt[0]={:02X} pkt[1]={:02X} pkt[3]={:02X}",
+        //     n,
+        //     buf.get(0).copied().unwrap_or(0),
+        //     buf.get(1).copied().unwrap_or(0),
+        //     buf.get(3).copied().unwrap_or(0));
 
-        let n = n as usize;
+        // if n < 0 {
+        //     let err = std::io::Error::last_os_error();
+        //     if err.raw_os_error() == Some(libc::EAGAIN)
+        //         || err.raw_os_error() == Some(libc::EWOULDBLOCK)
+        //     {
+        //         guard.clear_ready();
+        // continue;
+        // }
+        // eprintln!("[HCI] read error: {}", err);
+        //     break;
+        // }
+
+        // let n = n as usize;
+
+        let Some(pkt) = pkt_rx.recv().await else { break; };
 
         // ── Parse extended advertising report ─────────────────────────────
         let Some((mac, rssi, mfr_id, payload)) =
-            parse_ext_adv_report(&buf[..n], NODE_MAC)
+            parse_ext_adv_report(&pkt, NODE_MAC)
         else {
             continue;
         };
@@ -1025,4 +1071,278 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("LIMA gateway stopped. DB saved to {}", DB_PATH);
     Ok(())
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+//
+// Add this block at the bottom of main.rs.
+// Run with: cargo test -p gateway
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Test packet builder ───────────────────────────────────────────────────
+    //
+    // Constructs the exact byte sequence the kernel would write into our read
+    // buffer: HCI event header → LE Meta → Extended Advertising Report.
+    //
+    // addr:    6-byte BLE address, little-endian (LSB first), as it appears in
+    //          the HCI packet.  E3:79:63:12:EF:B1 → [0xB1,0xEF,0x12,0x63,0x79,0xE3]
+    // rssi:    raw u8 (cast to i8 by parser; 0x7F = not available → 0)
+    // mfr_id:  16-bit company ID, LE.  For LIMA: low byte = proto_version (0x02)
+    // payload: LF[2..184], 182 bytes.  Arbitrary content for parse tests.
+    fn make_ext_adv_pkt(
+        addr:    [u8; 6],
+        rssi:    u8,
+        mfr_id:  u16,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        // ── Build AD structure (type 0xFF manufacturer specific) ──────────
+        //
+        // AD structure layout:
+        //   [0]     length  = 1(type) + 2(company_id) + payload.len()
+        //   [1]     0xFF    AD type: manufacturer specific
+        //   [2]     mfr_id low byte   (= LF[0] proto_version)
+        //   [3]     mfr_id high byte  (= LF[1] event_type)
+        //   [4..]   payload           (= LF[2..184], 182B for LIMA)
+        let ad_content_len: u8 = (1 + 2 + payload.len()) as u8; // type + cid + payload
+        let mut ad: Vec<u8> = Vec::new();
+        ad.push(ad_content_len);
+        ad.push(0xFF);
+        ad.push((mfr_id & 0xFF) as u8);
+        ad.push((mfr_id >> 8) as u8);
+        ad.extend_from_slice(payload);
+        // ad.len() = 1 + ad_content_len = 4 + payload.len()
+        // For LIMA 182B payload: ad.len() = 186
+
+        // ── Build per-report (24-byte header + ad data) ───────────────────
+        //
+        // BT spec Core 5.4 Vol 4 Part E §7.7.65.13 per-report layout:
+        //   [0..1]  event_type (2B LE)
+        //   [2]     primary_phy
+        //   [3]     secondary_phy
+        //   [4]     advertising_sid
+        //   [5]     tx_power (i8)
+        //   [6]     rssi (i8, 0x7F = not available)
+        //   [7..8]  periodic_adv_interval (2B LE)
+        //   [9]     direct_address_type
+        //   [10..15] direct_address (6B)
+        //   [16]    address_type
+        //   [17..22] address (6B LE, LSB first)
+        //   [23]    data_length
+        //   [24..]  AD data (data_length bytes)
+        let mut report: Vec<u8> = Vec::new();
+        report.extend_from_slice(&[0x13, 0x00]); // event_type: non-connectable extended
+        report.push(0x01);                         // primary_phy: 1M
+        report.push(0x01);                         // secondary_phy: 1M
+        report.push(0xFF);                         // advertising_sid: not in a periodic set
+        report.push(0x7F);                         // tx_power: not available
+        report.push(rssi);                         // rssi [offset 6]
+        report.extend_from_slice(&[0x00, 0x00]);   // periodic_adv_interval: 0
+        report.push(0x00);                         // direct_address_type
+        report.extend_from_slice(&[0x00u8; 6]);    // direct_address
+        report.push(0x01);                         // address_type: random static
+        report.extend_from_slice(&addr);           // address [offsets 17..22]
+        report.push(ad.len() as u8);               // data_length [offset 23]
+        report.extend_from_slice(&ad);             // AD data [offset 24..]
+
+        debug_assert_eq!(report.len(), 24 + ad.len(),
+            "report header+data must be 24 + ad.len()");
+
+        // ── Build HCI event packet ────────────────────────────────────────
+        //
+        //   [0]    0x04  HCI_EVENT_PKT
+        //   [1]    0x3E  LE Meta Event
+        //   [2]    total parameter length
+        //   [3]    0x0D  LE Extended Advertising Report subevent
+        //   [4]    0x01  num_reports
+        //   [5..]  report data
+        let param_len = 2 + report.len(); // subevent(1) + num_reports(1) + report
+        let mut pkt: Vec<u8> = Vec::new();
+        pkt.push(0x04);
+        pkt.push(0x3E);
+        pkt.push(param_len as u8);
+        pkt.push(0x0D);
+        pkt.push(0x01);
+        pkt.extend_from_slice(&report);
+
+        pkt
+    }
+
+    // ── Shared test fixtures ──────────────────────────────────────────────────
+
+    /// The DK's static random address as it appears in HCI wire format (LE, LSB first).
+    const NODE_ADDR_LE: [u8; 6] = [0xB1, 0xEF, 0x12, 0x63, 0x79, 0xE3];
+
+    /// Heartbeat frame: proto_version=0x02, event_type=0x04.
+    const MFR_ID_HEARTBEAT: u16 = 0x0402;
+
+    // ── parse_ext_adv_report tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_round_trip_full_lima_frame() {
+        // Build a synthetic 215-byte HCI packet with known payload, parse it,
+        // assert every field survives the round-trip.
+        let payload: Vec<u8> = (0u8..182).collect(); // 0x00..0xB5, distinct pattern
+        let pkt = make_ext_adv_pkt(NODE_ADDR_LE, 0xC0, MFR_ID_HEARTBEAT, &payload);
+
+        assert_eq!(pkt.len(), 215, "full LIMA frame should be 215 bytes");
+
+        let result = parse_ext_adv_report(&pkt, NODE_MAC);
+        assert!(result.is_some(), "should parse successfully");
+
+        let (mac, rssi, mfr_id, got_payload) = result.unwrap();
+
+        assert_eq!(mac,     NODE_MAC,         "MAC string");
+        assert_eq!(rssi,    -64i8,            "0xC0 as i8 = -64 dBm");
+        assert_eq!(mfr_id,  MFR_ID_HEARTBEAT, "company ID");
+        assert_eq!(got_payload, payload.as_slice(), "payload bytes");
+    }
+
+    #[test]
+    fn test_mac_filter_rejects_other_nodes() {
+        // Same packet structure, different address bytes → None.
+        let other_addr = [0x01u8, 0x02, 0x03, 0x04, 0x05, 0x06];
+        let payload = vec![0x55u8; 182];
+        let pkt = make_ext_adv_pkt(other_addr, 0xA0, MFR_ID_HEARTBEAT, &payload);
+        assert!(parse_ext_adv_report(&pkt, NODE_MAC).is_none());
+    }
+
+    #[test]
+    fn test_company_id_filter_rejects_wrong_proto_version() {
+        // proto_version != 0x02 (low byte of mfr_id) → filtered before returning.
+        let payload = vec![0x55u8; 182];
+        let wrong_mfr_id: u16 = 0x0401; // proto_version = 0x01
+        let pkt = make_ext_adv_pkt(NODE_ADDR_LE, 0xA0, wrong_mfr_id, &payload);
+        assert!(parse_ext_adv_report(&pkt, NODE_MAC).is_none());
+    }
+
+    #[test]
+    fn test_rssi_not_available_maps_to_zero() {
+        // 0x7F is the HCI sentinel for "RSSI not available" → should yield 0, not 127.
+        let payload = vec![0x00u8; 182];
+        let pkt = make_ext_adv_pkt(NODE_ADDR_LE, 0x7F, MFR_ID_HEARTBEAT, &payload);
+        let (_, rssi, _, _) = parse_ext_adv_report(&pkt, NODE_MAC).unwrap();
+        assert_eq!(rssi, 0i8);
+    }
+
+    #[test]
+    fn test_rssi_negative_values() {
+        // Spot-check a few RSSI values across the valid range.
+        let payload = vec![0x00u8; 182];
+        for (raw, expected) in [(0xD8u8, -40i8), (0x81u8, -127i8), (0x14u8, 20i8)] {
+            let pkt = make_ext_adv_pkt(NODE_ADDR_LE, raw, MFR_ID_HEARTBEAT, &payload);
+            let (_, rssi, _, _) = parse_ext_adv_report(&pkt, NODE_MAC).unwrap();
+            assert_eq!(rssi, expected, "raw=0x{:02X}", raw);
+        }
+    }
+
+    #[test]
+    fn test_truncated_packets_do_not_panic() {
+        let full = make_ext_adv_pkt(NODE_ADDR_LE, 0xC0, MFR_ID_HEARTBEAT, &vec![0u8; 182]);
+        // Trim the packet to every length from 0 to 28 (just before AD data starts).
+        for len in 0..29 {
+            let truncated = &full[..len];
+            // Must not panic; None is the correct result for any truncated input.
+            assert!(parse_ext_adv_report(truncated, NODE_MAC).is_none(),
+                "should return None for len={}", len);
+        }
+    }
+
+    #[test]
+    fn test_wrong_hci_event_code_ignored() {
+        // 0x04 type + non-LE-Meta event code → None (e.g. Command Complete 0x0E)
+        let pkt = [0x04u8, 0x0E, 0x04, 0x01, 0x01, 0x20, 0x00];
+        assert!(parse_ext_adv_report(&pkt, NODE_MAC).is_none());
+    }
+
+    #[test]
+    fn test_wrong_subevent_ignored() {
+        // LE Meta + subevent 0x02 (legacy LE Advertising Report) → None.
+        let pkt = [0x04u8, 0x3E, 0x05, 0x02, 0x01, 0x00, 0x00, 0x00];
+        assert!(parse_ext_adv_report(&pkt, NODE_MAC).is_none());
+    }
+
+    // ── parse_ad_manufacturer tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_parse_ad_manufacturer_basic() {
+        // Single AD structure, type 0xFF, 2-byte company ID + 4-byte payload.
+        let mfr_id: u16 = 0x0402;
+        let data = [0xDE, 0xAD, 0xBE, 0xEF];
+        let mut ad: Vec<u8> = vec![
+            1 + 2 + 4,  // length: type(1) + cid(2) + data(4)
+            0xFF,
+            0x02, 0x04, // mfr_id LE
+        ];
+        ad.extend_from_slice(&data);
+
+        let result = parse_ad_manufacturer(&ad);
+        assert!(result.is_some());
+        let (got_mfr_id, got_payload) = result.unwrap();
+        assert_eq!(got_mfr_id, mfr_id);
+        assert_eq!(got_payload, data.as_slice());
+    }
+
+    #[test]
+    fn test_parse_ad_manufacturer_skips_other_types() {
+        // Complete Local Name (0x09) followed by Manufacturer Specific (0xFF).
+        let mut ad: Vec<u8> = vec![
+            4,           // length: 1(type) + 3(data)
+            0x09,        // Complete Local Name
+            b'D', b'K', b'1',
+        ];
+        ad.push(1 + 2 + 2); // 0xFF AD length
+        ad.push(0xFF);
+        ad.extend_from_slice(&[0x02, 0x04, 0xAA, 0xBB]);
+
+        let (mfr_id, payload) = parse_ad_manufacturer(&ad).unwrap();
+        assert_eq!(mfr_id, 0x0402);
+        assert_eq!(payload, &[0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn test_parse_ad_manufacturer_empty_returns_none() {
+        assert!(parse_ad_manufacturer(&[]).is_none());
+        assert!(parse_ad_manufacturer(&[0x00]).is_none()); // zero-length terminator
+    }
+
+    #[test]
+    fn test_parse_ad_manufacturer_no_0xff_returns_none() {
+        let ad = [0x02u8, 0x01, 0x06]; // Flags AD type (0x01)
+        assert!(parse_ad_manufacturer(&ad).is_none());
+    }
+
+    // ── MAC byte order test ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_mac_byte_reversal() {
+        // BLE wire format: [LSB...MSB].  E3:79:63:12:EF:B1 on wire = [B1,EF,12,63,79,E3].
+        // Parser must reverse to produce dev_E3_79_63_12_EF_B1.
+        let addr = [0xB1u8, 0xEF, 0x12, 0x63, 0x79, 0xE3];
+        let mac = format!(
+            "dev_{:02X}_{:02X}_{:02X}_{:02X}_{:02X}_{:02X}",
+            addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]
+        );
+        assert_eq!(mac, "dev_E3_79_63_12_EF_B1");
+        assert_eq!(mac, NODE_MAC);
+    }
+
+    // ── Struct layout test ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hci_filter_is_packed_14_bytes() {
+        // If repr(C, packed) is accidentally removed, setsockopt will pass the
+        // wrong length to the kernel and the filter will be silently misconfigured.
+        assert_eq!(
+            std::mem::size_of::<HciFilter>(), 14,
+            "HciFilter must be packed 14 bytes: u32(4) + [u32;2](8) + u16(2)"
+        );
+    }
+
+    #[test]
+    fn test_sock_addr_hci_is_6_bytes() {
+        assert_eq!(std::mem::size_of::<SockAddrHci>(), 6);
+    }
 }

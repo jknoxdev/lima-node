@@ -14,6 +14,12 @@ build:
 	cargo build
 	sudo setcap 'cap_net_raw,cap_net_admin+eip' ../../target/debug/gateway
 
+headless:
+	cargo build	
+	sudo setcap 'cap_net_raw,cap_net_admin+eip' ../../target/debug/gateway
+	sudo hciconfig hci1 down
+	../../target/debug/gateway --headless
+
 release:
 	cargo build --release
 	sudo setcap 'cap_net_raw,cap_net_admin+eip' ../../target/release/gateway
