@@ -45,12 +45,21 @@ use dirs;
 //   f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99
 //   8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2
 //   75
+// const TEST_NODE_PUBKEY_HEX: &str = concat!(
+//     "04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 ",
+//     "b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 ",
+//     "f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 ",
+//     "8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 ",
+//     "75"
+// );
+
+// Current node key - clock provisioned 2026-04-19
 const TEST_NODE_PUBKEY_HEX: &str = concat!(
-    "04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 ",
-    "b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 ",
-    "f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 ",
-    "8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 ",
-    "75"
+    "04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d ",
+    "b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 ",
+    "3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 ",
+    "e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f ",
+    "d7"
 );
 
 const DB_PATH:   &str = "lima_gateway.db";
@@ -461,9 +470,12 @@ async fn ble_task(
     let mut events = adapter.events().await
         .expect("Failed to get BLE event stream");
 
+
+
     let ntfy_client = reqwest::Client::new();
     let ntfy_url = format!("https://ntfy.sh/{}", ntfy_topic);
     let mut last_ntfy: Option<std::time::Instant> = None;
+    let mut rssi_cache: std::collections::HashMap<String, i8> = std::collections::HashMap::new();
     eprintln!("[LIMA] BLE event loop alive");
 
     while let Some(event) = events.next().await {
@@ -472,6 +484,14 @@ async fn ble_task(
             CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
                 (id, manufacturer_data)
             }
+            CentralEvent::DeviceUpdated(id) => {
+            if let Ok(p) = adapter.peripheral(&id).await {
+                if let Ok(Some(props)) = p.properties().await {
+                    rssi_cache.insert(id.to_string(), props.rssi.unwrap_or(0) as i8);
+                }
+            }
+            continue;
+        }
             _ => continue,
         };
 
@@ -483,13 +503,7 @@ async fn ble_task(
         eprintln!("[LIMA] event received");
 
         // ── RSSI lookup only for LIMA node ────────────────────────────────
-        let rssi = match adapter.peripheral(&peripheral_id).await {
-            Ok(p) => match p.properties().await {
-                Ok(Some(props)) => props.rssi.unwrap_or(0) as i8,
-                _ => 0i8,
-            },
-            _ => 0i8,
-        };
+        let rssi = rssi_cache.get(&address).copied().unwrap_or(0);
 
         // ── proto_version filter ──────────────────────────────────────────
         let Some((mfr_id, bytes)) = manufacturer_data.iter()
