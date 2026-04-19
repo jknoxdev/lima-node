@@ -1,0 +1,16 @@
+[Unit]
+Description=LIMA BLE active scan primer (hci1)
+After=bluetooth.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/hciconfig hci1 reset
+ExecStartPre=/bin/sleep 1
+ExecStart=/usr/bin/hcitool -i hci1 lescan --duplicate
+Restart=always
+RestartSec=2
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

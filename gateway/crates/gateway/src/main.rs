@@ -479,19 +479,26 @@ async fn ble_task(
     eprintln!("[LIMA] BLE event loop alive");
 
     while let Some(event) = events.next().await {
-        // ── Extract id + manufacturer_data, discard everything else ──────────
         let (peripheral_id, manufacturer_data) = match event {
             CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
                 (id, manufacturer_data)
             }
             CentralEvent::DeviceUpdated(id) => {
-            if let Ok(p) = adapter.peripheral(&id).await {
-                if let Ok(Some(props)) = p.properties().await {
-                    rssi_cache.insert(id.to_string(), props.rssi.unwrap_or(0) as i8);
+                if let Ok(p) = adapter.peripheral(&id).await {
+                    if let Ok(Some(props)) = p.properties().await {
+                        rssi_cache.insert(id.to_string(), props.rssi.unwrap_or(0) as i8);
+                        if !props.manufacturer_data.is_empty() {
+                            (id, props.manufacturer_data)
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
                 }
             }
-            continue;
-        }
             _ => continue,
         };
 

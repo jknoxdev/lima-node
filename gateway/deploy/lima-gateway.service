@@ -1,3 +1,4 @@
+# lima-gateway.service
 [Unit]
 Description=LIMA Gateway — BLE integrity monitor
 After=network.target bluetooth.service mosquitto.service
@@ -7,6 +8,7 @@ Wants=bluetooth.service mosquitto.service
 Type=simple
 User=arx
 WorkingDirectory=/home/arx/lima-node/gateway/crates/gateway
+ExecStartPre=+/usr/bin/hciconfig hci1 reset
 ExecStartPre=/bin/sleep 3
 ExecStart=/home/arx/lima-node/gateway/target/release/gateway --headless
 Restart=on-failure
