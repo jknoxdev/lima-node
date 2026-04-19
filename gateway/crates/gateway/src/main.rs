@@ -1,20 +1,25 @@
-//! LIMA Gateway — BLE scanner, signature verification, SQLite audit log, ratatui TUI
+//! LIMA Gateway — raw HCI scanner, signature verification, SQLite audit log, ratatui TUI
 //!
 //! Pipeline:
-//!   btleplug scan → extract manufacturer payload → verify outer ECDSA sig
-//!   → store raw encrypted blob in SQLite → publish to MQTT → update ratatui TUI
+//!   raw HCI socket (AF_BLUETOOTH/BTPROTO_HCI/HCI_CHANNEL_RAW on hci1)
+//!   → LE Extended Advertising Report (subevent 0x0D)
+//!   → extract manufacturer payload
+//!   → verify outer ECDSA sig
+//!   → store raw encrypted blob in SQLite
+//!   → publish to MQTT
+//!   → update ratatui TUI
 //!
-//! Skeleton: uses hardcoded test verifying key from crypto-test.
-//! Real provisioning (key store + AES decrypt) is next sprint.
+//! Scan layer bypasses bluetoothd D-Bus coalescing entirely.
+//! Reads all extended advertising events directly from the kernel HCI layer.
+//! bluetoothd must have hci1 up and scanning active (or task sends its own scan cmds).
 
 use std::{
     io,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
-use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
-use btleplug::platform::{Adapter, Manager};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -31,29 +36,45 @@ use ratatui::{
 use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::io::unix::AsyncFd;
 use lima_types::{LF_LEN, LF_SIGNED_BYTES, LF_OFFSET_OUTER_SIG, OUTER_SIG_LEN};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use dirs;
 
+// ── HCI constants ─────────────────────────────────────────────────────────────
+
+const BTPROTO_HCI:          i32 = 1;
+const HCI_CHANNEL_RAW:      u16 = 0;
+const SOL_HCI:              i32 = 0;
+const HCI_FILTER_SOCKOPT:   i32 = 2;
+const HCI_EVENT_PKT:        u32 = 4;   // packet type byte
+const HCI_EVENT_CODE_LE_META: u8 = 0x3E;
+const LE_EXT_ADV_REPORT_SUBEVENT: u8 = 0x0D;
+
+// HCI command opcodes (OGF=0x08 LE Controller)
+const HCI_LE_SET_EXT_SCAN_PARAMS:  u16 = 0x2041;
+const HCI_LE_SET_EXT_SCAN_ENABLE:  u16 = 0x2042;
+const HCI_COMMAND_PKT:             u8  = 0x01;
+
+/// HCI socket address (matches struct sockaddr_hci in kernel bluetooth/hci.h)
+#[repr(C)]
+struct SockAddrHci {
+    hci_family:  u16,   // AF_BLUETOOTH = 31
+    hci_dev:     u16,   // adapter index (hci0=0, hci1=1, ...)
+    hci_channel: u16,   // HCI_CHANNEL_RAW = 0
+}
+
+/// HCI socket filter (matches struct hci_filter in bluetooth/hci.h, packed)
+#[repr(C, packed)]
+struct HciFilter {
+    type_mask:  u32,     // bit N = accept packet type N
+    event_mask: [u32; 2],// bit N = accept event code N (64 bits total)
+    opcode:     u16,     // filter by opcode (0 = all)
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// Current node public key — provisioned 2026-03-28
-// [00:00:06.106,262] <inf> lima_crypto: CRYPTO: ECDSA public key (65 bytes):
-//   04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48
-//   b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1
-//   f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99
-//   8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2
-//   75
-// const TEST_NODE_PUBKEY_HEX: &str = concat!(
-//     "04 e5 cb a4 c8 55 04 fc  25 ca 64 21 5f 89 5d 48 ",
-//     "b7 87 13 98 d2 37 d9 62  1a 49 7d bd b4 7b 94 d1 ",
-//     "f1 98 ff ff f9 8b 9d 0a  1c a6 9f f7 cb 36 90 99 ",
-//     "8e 2f a4 5e 86 03 50 72  d9 3e c7 9f d6 c7 23 e2 ",
-//     "75"
-// );
-
-// Current node key - clock provisioned 2026-04-19
+// Current node public key — clock provisioned 2026-04-19
 const TEST_NODE_PUBKEY_HEX: &str = concat!(
     "04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d ",
     "b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 ",
@@ -62,8 +83,8 @@ const TEST_NODE_PUBKEY_HEX: &str = concat!(
     "d7"
 );
 
-const DB_PATH:   &str = "lima_gateway.db";
-const NODE_MAC:  &str = "dev_E3_79_63_12_EF_B1";
+const DB_PATH:  &str = "lima_gateway.db";
+const NODE_MAC: &str = "dev_E3_79_63_12_EF_B1";
 
 // ── MQTT constants ────────────────────────────────────────────────────────────
 
@@ -71,7 +92,6 @@ const MQTT_HOST:      &str = "localhost";
 const MQTT_PORT:      u16  = 1883;
 const MQTT_CLIENT_ID: &str = "lima-gateway";
 const NTFY_DEBOUNCE_SECS: u64 = 5;
-// const NTFY_TOPIC: &str = "333da315460b794864ff39565ab0eb777598f6000839c67ff4fb77f73c03345f"; # no oops
 
 fn load_ntfy_topic() -> String {
     let path = dirs::home_dir()
@@ -82,7 +102,6 @@ fn load_ntfy_topic() -> String {
         .trim()
         .to_string()
 }
-
 
 // Topic schema:
 //   lima/nodes/{node_id}/frames   — raw verified LF blob (hex) per frame
@@ -95,13 +114,13 @@ fn mqtt_topic_frames(node_id: &str) -> String {
     format!("lima/nodes/{}/frames", clean)
 }
 
-// ── MQTT frame to publish ─────────────────────────────────────────────────
+// ── MQTT frame to publish ─────────────────────────────────────────────────────
+
 struct MqttFrame {
     topic:   String,
     payload: String,
     retain:  bool,
 }
-
 
 // ── Event record ──────────────────────────────────────────────────────────────
 
@@ -200,18 +219,21 @@ fn load_test_verifying_key() -> VerifyingKey {
 
 /// Verify ECDSA-P256 outer signature over a LIMA Frame (LF).
 ///
-/// btleplug strips LF[0] (proto_version) and LF[1] (event_type) into the
-/// mfr_id HashMap key. Payload arrives as 182 bytes: LF[2..183].
+/// BLE manufacturer specific data carries the 184B LF split as:
+///   mfr_id (2B LE) = LF[0] (proto_version) | LF[1] (event_type) << 8
+///   payload (182B) = LF[2..184]
+///
 /// Reconstruct full 184B LF then verify outer_sig over LF[0..120].
 ///
 /// LF layout (184B):
-///   [0]       proto_version   ← stripped into mfr_id low byte
-///   [1]       event_type      ← stripped into mfr_id high byte
+///   [0]       proto_version
+///   [1]       event_type
 ///   [2-3]     reserved
 ///   [4-15]    nonce (12B)
-///   [16-103]  ciphertext (88B) — opaque, never inspected here
+///   [16-103]  ciphertext (88B)
 ///   [104-119] gcm_tag (16B)
 ///   [120-183] outer_sig (64B) — NOT included in signed region
+
 fn verify_outer_sig(mfr_id: u16, payload: &[u8], vk: &VerifyingKey) -> bool {
     const STRIPPED_LEN: usize = LF_LEN - 2; // 182
 
@@ -264,10 +286,13 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let table_header = Row::new(header_cells).height(1).bottom_margin(1);
 
     let rows = app.events.iter().map(|rec| {
-        // LF payload offsets (182B, company_id stripped by btleplug):
-        // [0]       proto_version  [1] event_type  [2-3] reserved
-        // [4-15]    nonce          [16-103] ciphertext (seq/timestamp inside, encrypted)
-        // [104-119] gcm_tag        [120-181] outer_sig
+        // raw_blob_hex is LF[2..184] (182B, mfr_id stripped):
+        //   [0-1]   reserved
+        //   [2-13]  nonce
+        //   [14-101] ciphertext
+        //   [102-117] gcm_tag
+        //   [118-181] outer_sig
+        
         let raw = hex::decode(&rec.raw_blob_hex).unwrap_or_default();
 
         let evt = raw.get(1)
@@ -277,10 +302,10 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         // seq is inside ciphertext — not visible without decryption
         let seq = "--".to_string();
 
-        // outer_sig starts at offset 120 in 182B payload
-        let sig_fp = if raw.len() >= 124 {
+        // outer_sig starts at offset 120 in 182B payload (LF offset 120, subtract 2 stripped = 118)
+        let sig_fp = if raw.len() >= 122 {
             format!("{:02X}{:02X}{:02X}{:02X}",
-                raw[120], raw[121], raw[122], raw[123])
+                raw[118], raw[119], raw[120], raw[121])
         } else {
             "?".to_string()
         };
@@ -330,9 +355,9 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     // ── Footer ────────────────────────────────────────────────────────────────
     let last = app.events.first().map(|e| {
         let raw = hex::decode(&e.raw_blob_hex).unwrap_or_default();
-        let sig_fp = if raw.len() >= 124 {
+        let sig_fp = if raw.len() >= 122 {
             format!("{:02X}{:02X}{:02X}{:02X}",
-                raw[120], raw[121], raw[122], raw[123])
+               raw[118], raw[119], raw[120], raw[121])
         } else {
             "????".to_string()
         };
@@ -382,7 +407,8 @@ async fn ntfy_notify(client: reqwest::Client, url: String) {
     }
 }
 
-// ── MQTT task — owns retry + reconnect logic ──────────────────────────────
+// ── MQTT task ─────────────────────────────────────────────────────────────────
+
 async fn mqtt_task(
     mut rx:       tokio::sync::mpsc::Receiver<MqttFrame>,
     mqtt_options: MqttOptions,
@@ -391,10 +417,7 @@ async fn mqtt_task(
     const PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
 
     loop {
-        // (Re)connect
         let (client, mut eventloop) = AsyncClient::new(mqtt_options.clone(), 64);
-
-        // oneshot — eventloop sub-task signals publish loop the moment connection dies
         let (dead_tx, mut dead_rx) = tokio::sync::oneshot::channel::<()>();
 
         tokio::spawn(async move {
@@ -404,28 +427,25 @@ async fn mqtt_task(
                     Err(e) => {
                         eprintln!("[MQTT] eventloop error: {e}");
                         let _ = dead_tx.send(());
-                        return; // exit cleanly, don't retry here
+                        return;
                     }
                 }
             }
         });
-
-        // Online health publish
+        
         let _ = client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online").await;
         eprintln!("[MQTT] connected to broker {}:{}", MQTT_HOST, MQTT_PORT);
 
         // Drain incoming frames until connection dies
         'publish: loop {
             tokio::select! {
-                // connection died — break immediately, don't wait for publish timeout
                 _ = &mut dead_rx => {
                     eprintln!("[MQTT] connection lost — reconnecting");
                     break 'publish;
                 }
-
                 frame = rx.recv() => {
                     match frame {
-                        None => return, // sender dropped — gateway shutting down
+                        None => return, // sender dropped
                         Some(frame) => {
                             match tokio::time::timeout(
                                 PUBLISH_TIMEOUT,
@@ -452,75 +472,363 @@ async fn mqtt_task(
     }
 }
 
-// ── BLE task ──────────────────────────────────────────────────────────────────
-async fn ble_task(
-    app:     Arc<Mutex<App>>,
-    conn:    Arc<Mutex<Connection>>,
-    vk:      Arc<VerifyingKey>,
-    mqtt_tx: tokio::sync::mpsc::Sender<MqttFrame>, 
-    adapter: Adapter,
-    ntfy_topic: String,
-) {
-    use btleplug::api::CentralEvent;
-    use futures::StreamExt;
+// ── Raw HCI helpers ───────────────────────────────────────────────────────────
 
-    adapter.start_scan(ScanFilter::default()).await
-        .expect("BLE scan failed");
+/// Open AF_BLUETOOTH / BTPROTO_HCI / HCI_CHANNEL_RAW socket on `hci_dev`.
+/// Returns the raw fd on success; logs and returns -1 on failure.
+///
+/// Requires CAP_NET_RAW (set via AmbientCapabilities in the systemd unit).
+/// HCI_CHANNEL_RAW taps into the kernel HCI event stream before bluetoothd's
+/// D-Bus layer, so we receive every advertising event the hardware delivers.
+fn hci_open_raw(hci_dev: u16) -> libc::c_int {
+    unsafe {
+        // SOCK_CLOEXEC = O_CLOEXEC for sockets
+        let sock = libc::socket(
+            libc::AF_BLUETOOTH,
+            libc::SOCK_RAW | libc::SOCK_CLOEXEC,
+            BTPROTO_HCI,
+        );
+        if sock < 0 {
+            eprintln!("[HCI] socket() failed: {}", std::io::Error::last_os_error());
+            return -1;
+        }
 
-    let mut events = adapter.events().await
-        .expect("Failed to get BLE event stream");
-
-
-
-    let ntfy_client = reqwest::Client::new();
-    let ntfy_url = format!("https://ntfy.sh/{}", ntfy_topic);
-    let mut last_ntfy: Option<std::time::Instant> = None;
-    let mut rssi_cache: std::collections::HashMap<String, i8> = std::collections::HashMap::new();
-    eprintln!("[LIMA] BLE event loop alive");
-
-    while let Some(event) = events.next().await {
-        let (peripheral_id, manufacturer_data) = match event {
-            CentralEvent::ManufacturerDataAdvertisement { id, manufacturer_data } => {
-                (id, manufacturer_data)
-            }
-            CentralEvent::DeviceUpdated(id) => {
-                if let Ok(p) = adapter.peripheral(&id).await {
-                    if let Ok(Some(props)) = p.properties().await {
-                        rssi_cache.insert(id.to_string(), props.rssi.unwrap_or(0) as i8);
-                        if !props.manufacturer_data.is_empty() {
-                            (id, props.manufacturer_data)
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
-                } else {
-                    continue;
-                }
-            }
-            _ => continue,
+        // Bind to the target adapter
+        let addr = SockAddrHci {
+            hci_family:  libc::AF_BLUETOOTH as u16,
+            hci_dev,
+            hci_channel: HCI_CHANNEL_RAW,
         };
+        let ret = libc::bind(
+            sock,
+            &addr as *const SockAddrHci as *const libc::sockaddr,
+            std::mem::size_of::<SockAddrHci>() as libc::socklen_t,
+        );
+        if ret < 0 {
+            eprintln!("[HCI] bind(hci{}) failed: {}", hci_dev, std::io::Error::last_os_error());
+            libc::close(sock);
+            return -1;
+        }
 
-        // ── MAC filter FIRST — before any btleplug calls ──────────────────
-        let address = peripheral_id.to_string();
-        if !address.ends_with(NODE_MAC){
+        // Set HCI filter: accept event packets only; all event codes.
+        // We filter to subevent 0x0D in software — keeping this broad avoids
+        // missing events if subevents change.
+        let filter = HciFilter {
+            type_mask:  1 << HCI_EVENT_PKT,    // 0x10 — event packets only
+            event_mask: [0xFFFF_FFFF, 0xFFFF_FFFF], // all event codes
+            opcode:     0,                      // no opcode filter
+        };
+        let ret = libc::setsockopt(
+            sock,
+            SOL_HCI,
+            HCI_FILTER_SOCKOPT,
+            &filter as *const HciFilter as *const libc::c_void,
+            std::mem::size_of::<HciFilter>() as libc::socklen_t,
+        );
+        if ret < 0 {
+            eprintln!("[HCI] setsockopt(HCI_FILTER) failed: {}", std::io::Error::last_os_error());
+            libc::close(sock);
+            return -1;
+        }
+
+        sock
+    }
+}
+
+/// Send LE Set Extended Scan Parameters + LE Set Extended Scan Enable via a
+/// raw HCI socket.  HCI_CHANNEL_RAW allows writing HCI commands as long as
+/// the adapter is UP (kernel check in hci_sock_sendmsg).
+///
+/// Parameters: passive scan, 1M PHY only, 30ms interval/window (100% duty
+/// cycle), no duplicate filtering (critical — we want every frame).
+///
+/// Errors are logged but not fatal; if the adapter is already scanning the
+/// events will arrive anyway.
+fn hci_start_ext_scan(sock: libc::c_int) {
+    // ── LE Set Extended Scan Parameters (0x2041) ──────────────────────────
+    // 8 parameter bytes for 1M PHY only:
+    //   own_addr_type(1) + filter_policy(1) + scanning_phys(1)
+    //   + [1M: scan_type(1) + interval(2) + window(2)]
+    let params_cmd: [u8; 12] = [
+        HCI_COMMAND_PKT,                         // HCI packet type
+        (HCI_LE_SET_EXT_SCAN_PARAMS & 0xFF) as u8,
+        (HCI_LE_SET_EXT_SCAN_PARAMS >> 8)   as u8,
+        8,          // parameter length
+        0x00,       // Own_Address_Type: public
+        0x00,       // Scanning_Filter_Policy: accept all
+        0x01,       // Scanning_PHYs: 1M
+        // 1M PHY entry:
+        0x00,       // Scan_Type: passive (0x01 = active)
+        0x30, 0x00, // Scan_Interval: 48 × 0.625ms = 30ms
+        0x30, 0x00, // Scan_Window:   30ms (100% duty cycle)
+    ];
+
+    unsafe {
+        let ret = libc::write(
+            sock,
+            params_cmd.as_ptr() as *const libc::c_void,
+            params_cmd.len(),
+        );
+        if ret < 0 {
+            eprintln!("[HCI] write(LE_SET_EXT_SCAN_PARAMS) failed: {}",
+                      std::io::Error::last_os_error());
+        } else {
+            eprintln!("[HCI] LE Set Extended Scan Parameters sent");
+        }
+    }
+
+    // Brief pause — give the controller time to apply params before enable.
+    std::thread::sleep(Duration::from_millis(20));
+
+    // ── LE Set Extended Scan Enable (0x2042) ──────────────────────────────
+    // 6 parameter bytes:
+    //   enable(1) + filter_duplicates(1) + duration(2) + period(2)
+    let enable_cmd: [u8; 10] = [
+        HCI_COMMAND_PKT,
+        (HCI_LE_SET_EXT_SCAN_ENABLE & 0xFF) as u8,
+        (HCI_LE_SET_EXT_SCAN_ENABLE >> 8)   as u8,
+        6,          // parameter length
+        0x01,       // Enable: 1
+        0x00,       // Filter_Duplicates: 0 — receive every frame
+        0x00, 0x00, // Duration: 0 = continuous
+        0x00, 0x00, // Period: 0
+    ];
+
+    unsafe {
+        let ret = libc::write(
+            sock,
+            enable_cmd.as_ptr() as *const libc::c_void,
+            enable_cmd.len(),
+        );
+        if ret < 0 {
+            eprintln!("[HCI] write(LE_SET_EXT_SCAN_ENABLE) failed: {}",
+                      std::io::Error::last_os_error());
+    } else {            
+        eprintln!("[HCI] LE Set Extended Scan Enable sent — scanning hci{}", 0);
+        }
+    }
+}
+
+// ── HCI packet parsing ────────────────────────────────────────────────────────
+
+/// Parse manufacturer specific AD structure from raw AD data bytes.
+///
+/// Returns (mfr_id, payload) where:
+///   mfr_id  = company ID, u16 LE  (= LF[0] | LF[1]<<8 after btleplug stripping)
+///   payload = everything after the company ID bytes (= LF[2..184], 182B for LIMA)
+///
+/// Only the first matching AD type 0xFF entry is returned.
+fn parse_ad_manufacturer(ad_data: &[u8]) -> Option<(u16, &[u8])> {
+    let mut i = 0;
+    while i < ad_data.len() {
+        let length = ad_data[i] as usize;
+        if length == 0 {
+            break; // zero-length terminates AD structures
+        }
+        if i + 1 + length > ad_data.len() {
+            break; // malformed
+        }
+
+        let ad_type    = ad_data[i + 1];
+        let ad_content = &ad_data[i + 2..i + 1 + length]; // length includes type byte
+
+        if ad_type == 0xFF && ad_content.len() >= 2 {
+            let mfr_id  = u16::from_le_bytes([ad_content[0], ad_content[1]]);
+            let payload = &ad_content[2..];
+            return Some((mfr_id, payload));
+        }
+
+        i += 1 + length; // advance past this AD structure
+    }
+    None
+}
+
+/// Parse a raw HCI packet buffer for a LE Extended Advertising Report.
+///
+/// Returns an iterator-style approach: handles `num_reports` in one call,
+/// returns the first report matching our MAC and company ID filter.
+///
+/// On match returns (mac_string, rssi, mfr_id, payload_slice).
+///
+/// HCI Extended Advertising Report packet layout:
+///   [0]       0x04                     HCI_EVENT_PKT
+///   [1]       0x3E                     LE Meta Event
+///   [2]       total_param_length
+///   [3]       0x0D                     LE Extended Advertising Report subevent
+///   [4]       num_reports
+///   [5..]     per-report data (variable length)
+///
+/// Per-report layout (24 bytes header + AD data):
+///   [+0..1]  event_type (2B LE)
+///   [+2]     primary_phy
+///   [+3]     secondary_phy
+///   [+4]     advertising_sid
+///   [+5]     tx_power (i8)
+///   [+6]     rssi (i8, 0x7F = not available)
+///   [+7..8]  periodic_adv_interval (2B LE)
+///   [+9]     direct_address_type
+///   [+10..15] direct_address (6B)
+///   [+16]    address_type
+///   [+17..22] address (6B, little-endian LSB first)
+///   [+23]    data_length
+///   [+24..]  AD data (data_length bytes)
+fn parse_ext_adv_report<'a>(
+    pkt: &'a [u8],
+    node_mac: &str,
+) -> Option<(String, i8, u16, &'a [u8])> {
+    // Minimum packet: 3B HCI header + 1B subevent + 1B num_reports
+    if pkt.len() < 5 { return None; }
+    if pkt[0] != 0x04                      { return None; } // not HCI_EVENT_PKT
+    if pkt[1] != HCI_EVENT_CODE_LE_META    { return None; } // not LE Meta
+    if pkt[3] != LE_EXT_ADV_REPORT_SUBEVENT { return None; } // not ext adv report
+
+    let num_reports = pkt[4] as usize;
+    let mut offset = 5usize;
+
+    for _ in 0..num_reports {
+        // Report header is 24 bytes (indices 0..23 relative to report start)
+        const REPORT_HDR: usize = 24;
+        if pkt.len() < offset + REPORT_HDR { return None; }
+
+        let rssi_raw = pkt[offset + 6];
+        let rssi = if rssi_raw == 0x7F { 0i8 } else { rssi_raw as i8 };
+
+        // Address bytes [+17..+23], little-endian (LSB first in wire)
+        // E3:79:63:12:EF:B1 → wire [B1, EF, 12, 63, 79, E3]
+        let addr = &pkt[offset + 17..offset + 23];
+        let mac = format!(
+            "dev_{:02X}_{:02X}_{:02X}_{:02X}_{:02X}_{:02X}",
+            addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]
+        );
+
+        let data_length = pkt[offset + 23] as usize;
+        if pkt.len() < offset + REPORT_HDR + data_length {
+            return None;
+        }
+        let ad_data = &pkt[offset + REPORT_HDR..offset + REPORT_HDR + data_length];
+
+        // MAC filter — skip to next report if not our node
+        if mac != node_mac {
+            offset += REPORT_HDR + data_length;
             continue;
         }
-        eprintln!("[LIMA] event received");
+        eprintln!("[HCI] ext adv report from {}", mac);
 
-        // ── RSSI lookup only for LIMA node ────────────────────────────────
-        let rssi = rssi_cache.get(&address).copied().unwrap_or(0);
+        // Extract manufacturer specific data and apply company ID filter
+        if let Some((mfr_id, payload)) = parse_ad_manufacturer(ad_data) {
+            // proto_version filter: LF[0] == 0x02 → mfr_id low byte == 0x02
+            if (mfr_id & 0xFF) as u8 == 0x02 {
+                return Some((mac, rssi, mfr_id, payload));
+            }
+        }
 
-        // ── proto_version filter ──────────────────────────────────────────
-        let Some((mfr_id, bytes)) = manufacturer_data.iter()
-            .find(|(id, _)| (*id & 0xFF) as u8 == 0x02)
+        // Right MAC, wrong AD content — don't advance to other reports
+        return None;
+    }
+
+    None
+}
+
+// ── HCI scan task ─────────────────────────────────────────────────────────────
+
+/// Raw HCI scan loop — replaces the btleplug ble_task.
+///
+/// Opens AF_BLUETOOTH/BTPROTO_HCI/HCI_CHANNEL_RAW on `hci_dev`, sends LE
+/// Extended Scan Parameters + Enable, then reads HCI events directly from the
+/// kernel bypassing bluetoothd's D-Bus coalescing layer.
+///
+/// Everything downstream of the scan (verify_outer_sig, SQLite, MQTT, TUI) is
+/// identical to the former btleplug implementation.
+async fn hci_scan_task(
+    app:        Arc<Mutex<App>>,
+    conn:       Arc<Mutex<Connection>>,
+    vk:         Arc<VerifyingKey>,
+    mqtt_tx:    tokio::sync::mpsc::Sender<MqttFrame>,
+    hci_dev:    u16,
+    ntfy_topic: String,
+) {
+    // ── Open raw HCI socket ───────────────────────────────────────────────
+    let sock_raw = hci_open_raw(hci_dev);
+    if sock_raw < 0 {
+        eprintln!("[HCI] failed to open raw socket — ble-stability scan task exiting");
+        return;
+    }
+    eprintln!("[HCI] raw socket open on hci{}", hci_dev);
+
+    // ── Send LE Extended Scan Parameters + Enable ─────────────────────────
+    // Fire-and-forget: errors are logged inside hci_start_ext_scan.
+    // If the adapter is already scanning (bluetoothd / Makefile pre-roll),
+    // these commands are benign — they re-apply scan params and keep going.
+    hci_start_ext_scan(sock_raw);
+
+    // ── Set non-blocking, wrap in AsyncFd ────────────────────────────────
+    unsafe {
+        let flags = libc::fcntl(sock_raw, libc::F_GETFL);
+        libc::fcntl(sock_raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    }
+
+    // SAFETY: sock_raw is a valid open fd from hci_open_raw above.
+    // OwnedFd takes ownership and will close it on drop.
+    let owned = unsafe { OwnedFd::from_raw_fd(sock_raw) };
+    let async_fd = match AsyncFd::new(owned) {
+        Ok(fd) => fd,
+        Err(e) => {
+            eprintln!("[HCI] AsyncFd::new failed: {}", e);
+            return;
+        }
+    };
+
+    let ntfy_client = reqwest::Client::new();
+    let ntfy_url    = format!("https://ntfy.sh/{}", ntfy_topic);
+    let mut last_ntfy: Option<std::time::Instant> = None;
+
+    eprintln!("[HCI] scan loop alive — hci{} / subevent 0x0D", hci_dev);
+
+    // Buffer large enough for any LE Extended Advertising event.
+    // LF=184B + AD overhead + HCI headers ≈ 215B; 512 is comfortable.
+    let mut buf = [0u8; 512];
+
+    loop {
+        // Wait until the socket is readable
+        let mut guard = match async_fd.readable().await {
+            Ok(g)  => g,
+            Err(e) => {
+                eprintln!("[HCI] readable() error: {}", e);
+                break;
+            }
+        };
+
+        let fd = guard.get_inner().as_raw_fd();
+        let n = unsafe {
+            libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) as isize
+        };
+
+        if n < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EAGAIN)
+                || err.raw_os_error() == Some(libc::EWOULDBLOCK)
+            {
+                guard.clear_ready();
+        continue;
+        }
+        eprintln!("[HCI] read error: {}", err);
+            break;
+        }
+
+        let n = n as usize;
+
+        // ── Parse extended advertising report ─────────────────────────────
+        let Some((mac, rssi, mfr_id, payload)) =
+            parse_ext_adv_report(&buf[..n], NODE_MAC)
         else {
             continue;
         };
 
-        let sig_verified = verify_outer_sig(*mfr_id, bytes, &vk);
-        let raw_blob_hex = hex::encode(bytes);
+        // payload is a slice into buf — copy it before we modify buf next iteration
+        let payload_vec: Vec<u8> = payload.to_vec();
+
+        let sig_verified = verify_outer_sig(mfr_id, &payload_vec, &vk);
+        let raw_blob_hex = hex::encode(&payload_vec);
 
         let received_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -529,7 +837,7 @@ async fn ble_task(
 
         let mut rec = EventRecord {
             id: 0,
-            node_id: address.clone(),
+            node_id: mac.clone(),
             received_at,
             sig_verified,
             rssi,    
@@ -546,13 +854,13 @@ async fn ble_task(
             }
         }
 
-        // ── MQTT publish — verified frames only, with timeout ─────────────
+        // ── MQTT publish — verified frames only ───────────────────────────
         if sig_verified {
             let frame = MqttFrame {
-                topic:   mqtt_topic_frames(&address),
+                topic:   mqtt_topic_frames(&mac),
                 payload: format!(
                     r#"{{"node_id":"{}","received_at":{},"rssi":{},"lf":"{}"}}"#,
-                    address, received_at, rssi, raw_blob_hex
+                    mac, received_at, rssi, raw_blob_hex
                 ),
                 retain: false, 
             };
@@ -563,11 +871,9 @@ async fn ble_task(
             // store to last_ntfy
             if last_ntfy.map_or(true, |t| t.elapsed().as_secs() > NTFY_DEBOUNCE_SECS) {
                 tokio::spawn(ntfy_notify(ntfy_client.clone(), ntfy_url.clone()));
-                last_ntfy = Some(std::time::Instant::now());  // ← add this back
+                last_ntfy = Some(std::time::Instant::now());
             }
-
         }
-
 
         // ── TUI update ────────────────────────────────────────────────────
         {
@@ -576,8 +882,10 @@ async fn ble_task(
         }
     }
 
-    eprintln!("[LIMA] BLE event stream ended — adapter disconnected?");
+    eprintln!("[HCI] scan loop exited — hci{} socket closed", hci_dev);
 }
+
+// ── Adapter index discovery (unchanged) ──────────────────────────────────────
 
 fn find_realtek_hci_index() -> Option<usize> {
     let output = std::process::Command::new("hciconfig")
@@ -610,47 +918,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let headless = std::env::args().any(|a| a == "--headless");
 
-    // ── BLE adapter discovery ─────────────────────────────────────────────────
-    eprintln!("[LIMA] Scanning for BLE adapters...");
-    let manager  = Manager::new().await.expect("BLE manager failed");
-    let adapters = manager.adapters().await.expect("Failed to list BLE adapters");
-
-    if adapters.is_empty() {
-        eprintln!("[LIMA] ERROR: no BLE adapters found.");
-        eprintln!("[LIMA] Check: sudo systemctl status bluetooth");
-        eprintln!("[LIMA] Check: sudo setcap 'cap_net_raw,cap_net_admin+eip' target/debug/gateway");
-        std::process::exit(1);
-    }
-
-    let mut adapter_infos = Vec::new();
-    for (i, a) in adapters.iter().enumerate() {
-        let info = a.adapter_info().await.unwrap_or_else(|_| "unknown".to_string());
-        eprintln!("[LIMA]   adapter {}: {}", i, info);
-        adapter_infos.push(info);
-    }
-
-    // Prefer Realtek adapter (ASUS BT500 — required for BLE 5.0 extended adv)
-    let realtek_hci = find_realtek_hci_index();
-    let adapter_idx = match realtek_hci {
-        Some(hci_idx) => {
-            adapter_infos.iter()
-                .position(|info| info.contains(&format!("hci{}", hci_idx)))
-                .unwrap_or_else(|| {
-                    eprintln!("[LIMA] WARNING: Realtek hci{} not in btleplug list, falling back to 0", hci_idx);
-                    0
-                })
+    // ── HCI adapter index ─────────────────────────────────────────────────────
+    // find_realtek_hci_index() scans hciconfig -a for the Realtek BD address
+    // and returns the hci index (0, 1, ...). Falls back to 1 (known hci1 on RPi5).
+    let hci_dev = match find_realtek_hci_index() {
+        Some(idx) => {
+            eprintln!("[LIMA] Using Realtek adapter: hci{}", idx);
+            idx as u16
         }
         None => {
-            eprintln!("[LIMA] WARNING: Realtek adapter not found via hciconfig, falling back to 0");
-            0
+            eprintln!("[LIMA] WARNING: Realtek adapter not found via hciconfig, defaulting to hci1");
+            1u16
         }
     };
-
-
-    let adapter = adapters.into_iter().nth(adapter_idx)
-        .expect("No BLE adapter found");
-    eprintln!("[LIMA] Using adapter {}: {}", adapter_idx, adapter_infos[adapter_idx]);
-
 
     // ── DB init ───────────────────────────────────────────────────────────────
     let conn = Connection::open(DB_PATH)?;
@@ -664,25 +944,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut mqtt_options = MqttOptions::new(MQTT_CLIENT_ID, MQTT_HOST, MQTT_PORT);
     mqtt_options.set_keep_alive(Duration::from_secs(30));
 
-
     // ── MQTT queue channel ────────────────────────────────────────────────────
     let (mqtt_tx, mqtt_rx) = tokio::sync::mpsc::channel::<MqttFrame>(128);
 
     tokio::spawn(mqtt_task(mqtt_rx, mqtt_options));
 
-    eprintln!("[LIMA] MQTT connected — broker {}:{}", MQTT_HOST, MQTT_PORT);
+    eprintln!("[LIMA] MQTT task spawned — broker {}:{}", MQTT_HOST, MQTT_PORT);
 
     // ── App state ─────────────────────────────────────────────────────────────
     let app = Arc::new(Mutex::new(App::new()));
     let ntfy_topic = load_ntfy_topic();
 
-    // ── Spawn BLE task ────────────────────────────────────────────────────────
-    tokio::spawn(ble_task(
+    // ── Spawn raw HCI scan task ───────────────────────────────────────────────
+
+    tokio::spawn(hci_scan_task(
         Arc::clone(&app),
         Arc::clone(&conn),
         Arc::clone(&verifying_key),
         mqtt_tx.clone(), 
-        adapter,
+        hci_dev,
         ntfy_topic,
     ));
 
@@ -690,21 +970,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("[LIMA] running headless — waiting for SIGTERM or SIGINT");
         let mut sigterm = signal(SignalKind::terminate())?;
         tokio::select! {
-            _ = sigterm.recv()         => eprintln!("[LIMA] SIGTERM received"),
+            _ = sigterm.recv()          => eprintln!("[LIMA] SIGTERM received"),
             _ = tokio::signal::ctrl_c() => eprintln!("[LIMA] SIGINT received"),
         }
     } else {
 
-        // ── TUI setup ─────────────────────────────────────────────────────────────
+        // ── TUI setup ─────────────────────────────────────────────────────────
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend      = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-
-
-        // ── TUI event loop ────────────────────────────────────────────────────────
+        // ── TUI event loop ────────────────────────────────────────────────────
         loop {
             {
                 let mut a = app.lock().await;
@@ -726,7 +1004,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // ── TUI teardown ──────────────────────────────────────────────────────────
+        // ── TUI teardown ──────────────────────────────────────────────────────
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),
