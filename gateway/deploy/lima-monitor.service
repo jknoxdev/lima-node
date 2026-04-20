@@ -1,0 +1,16 @@
+[Unit]
+Description=LIMA gateway headless monitor (byobu/tmux)
+After=network.target mosquitto.service lima-gateway.service
+Wants=mosquitto.service
+
+[Service]
+Type=forking
+# Run as user session — tmux new-session -d detaches immediately
+ExecStart=/home/arx/lima-monitor.sh
+# Don't restart automatically — gateway pane handles its own restart loop
+Restart=no
+# Give tmux time to set up all 5 panes
+TimeoutStartSec=15
+
+[Install]
+WantedBy=default.target
