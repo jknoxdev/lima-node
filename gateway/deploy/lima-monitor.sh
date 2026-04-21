@@ -49,20 +49,11 @@ fi
 
 # [0] Gateway TUI — run directly; falls back to a wait loop if binary missing
 CMD_GATEWAY="
-cd ${GATEWAY_DIR}
-if [ -x '${GATEWAY_BIN}' ]; then
-    while true; do
-        echo '[lima] starting gateway...'
-        ${GATEWAY_BIN}
-        echo '[lima] gateway exited — restart in 5s (Ctrl-C to abort)'
-        sleep 5
-    done
-else
-    echo '[lima] WARNING: gateway binary not found at ${GATEWAY_BIN}'
-    echo '[lima] run: cargo build --release  to build it'
-    bash
-fi
+echo '[lima] tailing gateway service log'
+echo '─────────────────────────────────────────'
+journalctl -u lima-gateway -f --no-pager -n 50
 "
+
 
 # [1] Mosquitto log tail — tries journalctl first, falls back to file
 CMD_MOSQUITTO="

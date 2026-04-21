@@ -65,3 +65,4 @@ DenyInterfaces = A0:AD:9F:71:13:98
 
 Without this, paired peripherals (headsets, etc.) can reconnect to the adapter, wedge the HCI stack,
 and silently take down the gateway — with no kernel-level error to indicate why.
+

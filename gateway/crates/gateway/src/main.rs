@@ -42,7 +42,7 @@ use dirs;
 // ── HCI constants ─────────────────────────────────────────────────────────────
 
 const BTPROTO_HCI:          i32 = 1;
-const HCI_CHANNEL_RAW:      u16 = 0;
+// const HCI_CHANNEL_RAW:      u16 = 0;
 const HCI_CHANNEL_USER:     u16 = 1;
 const SOL_HCI:              i32 = 0;
 const HCI_FILTER_SOCKOPT:   i32 = 2;
@@ -89,7 +89,7 @@ const NODE_MAC: &str = "dev_E3_79_63_12_EF_B1";
 
 const MQTT_HOST:      &str = "localhost";
 const MQTT_PORT:      u16  = 1883;
-const MQTT_CLIENT_ID: &str = "lima-gateway";
+const MQTT_CLIENT_ID_PREFIX: &str = "lima-gateway";
 const NTFY_DEBOUNCE_SECS: u64 = 5;
 
 fn load_ntfy_topic() -> String {
@@ -107,10 +107,15 @@ fn load_ntfy_topic() -> String {
 //   lima/gateway/health           — gateway online/offline (retained)
 const MQTT_TOPIC_HEALTH: &str = "lima/gateway/health";
 
+
 fn mqtt_topic_frames(node_id: &str) -> String {
     // sanitize btleplug node_id ("dev_E3_79_63_12_EF_B1") for MQTT topic
     let clean = node_id.replace('/', "-").replace('_', "-");
     format!("lima/nodes/{}/frames", clean)
+}
+
+fn build_mqtt_client_id() -> String {
+    format!("{}-{}", MQTT_CLIENT_ID_PREFIX, std::process::id())
 }
 
 // ── MQTT frame to publish ─────────────────────────────────────────────────────
@@ -411,80 +416,64 @@ async fn mqtt_task(
     mut rx:       tokio::sync::mpsc::Receiver<MqttFrame>,
     mqtt_options: MqttOptions,
 ) {
-    const RETRY_DELAY:     Duration = Duration::from_secs(5);
     const PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
 
-    loop {
-        let (client, mut eventloop) = AsyncClient::new(mqtt_options.clone(), 64);
-        let (dead_tx, mut dead_rx) = tokio::sync::oneshot::channel::<()>();
+    let (client, mut eventloop) = AsyncClient::new(mqtt_options, 64);
 
-        // Spawn eventloop — keep handle so we can abort on reconnect
-        let el_handle = tokio::spawn(async move {
-            loop {
-                match eventloop.poll().await {
-                    Ok(_)  => {}
-                    Err(e) => {
-                        eprintln!("[MQTT] eventloop error: {e}");
-                        let _ = dead_tx.send(());
-                        return;
-                    }
+    // Eventloop in its own task — handles reconnection internally
+    let client2 = client.clone();
+    tokio::spawn(async move {
+        let mut consecutive_errs: u32 = 0;
+        loop {
+            match eventloop.poll().await {
+                Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(_))) => {
+                    consecutive_errs = 0;
+                    eprintln!("[MQTT] connected to broker {}:{}", MQTT_HOST, MQTT_PORT);
+                    // (consider moving this publish onto the mpsc)
+                    let _ = client2
+                        .publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online")
+                        .await;
                 }
-            }
-        });
-
-        let _ = client
-            .publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online")
-            .await;
-        eprintln!("[MQTT] connected to broker {}:{}", MQTT_HOST, MQTT_PORT);
-
-        // Drain incoming frames until connection dies
-        'publish: loop {
-            tokio::select! {
-                _ = &mut dead_rx => {
-                    eprintln!("[MQTT] connection lost — reconnecting");
-                    break 'publish;
+                Ok(_) => {
+                    consecutive_errs = 0;
                 }
-                frame = rx.recv() => {
-                    match frame {
-                        None => {
-                            el_handle.abort();
-                            return; // sender dropped — clean shutdown
-                        }
-                        Some(frame) => {
-                            match tokio::time::timeout(
-                                PUBLISH_TIMEOUT,
-                                client.publish(
-                                    &frame.topic,
-                                    QoS::AtLeastOnce,
-                                    frame.retain,
-                                    frame.payload.clone(),
-                                ),
-                            ).await {
-                                Ok(Ok(_))  => {}
-                                Ok(Err(e)) => {
-                                    eprintln!("[MQTT] publish error: {e} — reconnecting");
-                                    break 'publish;
-                                }
-                                Err(_) => {
-                                    eprintln!("[MQTT] publish timeout — broker unreachable");
-                                    break 'publish;
-                                }
-                            }
-                        }
+                Err(e) => {
+                    consecutive_errs = consecutive_errs.saturating_add(1);
+                    eprintln!("[MQTT] eventloop error (#{}): {e:?}", consecutive_errs);
+                    // Only back off on repeated errors; first error → reconnect immediately.
+                    if consecutive_errs > 1 {
+                        let backoff_ms = 250u64.saturating_mul(1 << consecutive_errs.min(6));
+                        tokio::time::sleep(Duration::from_millis(500)).await;
                     }
                 }
             }
         }
+    });
 
-        // Abort orphaned eventloop before spawning a new one
-        el_handle.abort();
-        let _ = el_handle.await; // reap the task
-
-        tokio::time::sleep(RETRY_DELAY).await;
-        eprintln!("[MQTT] reconnecting...");
+    // Publish loop — just send frames, eventloop handles the rest
+    while let Some(frame) = rx.recv().await {
+        match tokio::time::timeout(
+            PUBLISH_TIMEOUT,
+            client.publish(&frame.topic, QoS::AtLeastOnce, frame.retain, frame.payload.clone()),
+        ).await {
+            Ok(Ok(_))  => {}
+            Ok(Err(e)) => eprintln!("[MQTT] publish error: {e}"),
+            Err(_)     => eprintln!("[MQTT] publish timeout"),
+        }
     }
-}
 
+    // Publish loop — just send frames, eventloop handles the rest
+    // while let Some(frame) = rx.recv().await {
+    //     if let Err(e) = client.publish(
+    //         &frame.topic,
+    //         QoS::AtLeastOnce,
+    //         frame.retain,
+    //         frame.payload.clone(),
+    //     ).await {
+    //         eprintln!("[MQTT] publish error: {e}");
+    //     }
+    // }
+}
 
 // ── Raw HCI helpers ───────────────────────────────────────────────────────────
 
@@ -691,6 +680,7 @@ fn parse_ad_manufacturer(ad_data: &[u8]) -> Option<(u16, &[u8])> {
 ///   [+17..22] address (6B, little-endian LSB first)
 ///   [+23]    data_length
 ///   [+24..]  AD data (data_length bytes)
+
 fn parse_ext_adv_report<'a>(
     pkt: &'a [u8],
     node_mac: &str,
@@ -730,10 +720,7 @@ fn parse_ext_adv_report<'a>(
             continue;
         }
         eprintln!("[HCI] ext adv report from {}", mac);
-
-
-
-
+        
         // MAC filter — skip to next report if not our node
         if mac != node_mac {
             offset += REPORT_HDR + data_length;
@@ -809,23 +796,6 @@ async fn hci_scan_task(
             }
         }
     });
-
-    // ── Set non-blocking, wrap in AsyncFd ────────────────────────────────
-    // unsafe {
-    //     let flags = libc::fcntl(sock_raw, libc::F_GETFL);
-    //     libc::fcntl(sock_raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
-    // }
-
-    // // SAFETY: sock_raw is a valid open fd from hci_open_raw above.
-    // // OwnedFd takes ownership and will close it on drop.
-    // let owned = unsafe { OwnedFd::from_raw_fd(sock_raw) };
-    // let async_fd = match AsyncFd::new(owned) {
-    //     Ok(fd) => fd,
-    //     Err(e) => {
-    //         eprintln!("[HCI] AsyncFd::new failed: {}", e);
-    //         return;
-    //     }
-    // };
     
     // ── Async pipeline loop ───────────────────────────────────────────────
     let ntfy_client = reqwest::Client::new();
@@ -842,39 +812,6 @@ async fn hci_scan_task(
     eprintln!("[HCI] entering read loop");
 
     loop {
-        // // Wait until the socket is readable
-        // let mut guard = match async_fd.readable().await {
-        //     Ok(g)  => g,
-        //     Err(e) => {
-        //         eprintln!("[HCI] readable() error: {}", e);
-        //         break;
-        //     }
-        // };
-
-        // let fd = guard.get_inner().as_raw_fd();
-        // let n = unsafe {
-        //     libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) as isize
-        // };
-
-        // eprintln!("[HCI] read {} bytes, pkt[0]={:02X} pkt[1]={:02X} pkt[3]={:02X}",
-        //     n,
-        //     buf.get(0).copied().unwrap_or(0),
-        //     buf.get(1).copied().unwrap_or(0),
-        //     buf.get(3).copied().unwrap_or(0));
-
-        // if n < 0 {
-        //     let err = std::io::Error::last_os_error();
-        //     if err.raw_os_error() == Some(libc::EAGAIN)
-        //         || err.raw_os_error() == Some(libc::EWOULDBLOCK)
-        //     {
-        //         guard.clear_ready();
-        // continue;
-        // }
-        // eprintln!("[HCI] read error: {}", err);
-        //     break;
-        // }
-
-        // let n = n as usize;
 
         let Some(pkt) = pkt_rx.recv().await else { break; };
 
@@ -1002,8 +939,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let verifying_key = Arc::new(load_test_verifying_key());
 
     // ── MQTT init ─────────────────────────────────────────────────────────────
-    let mut mqtt_options = MqttOptions::new(MQTT_CLIENT_ID, MQTT_HOST, MQTT_PORT);
+    // Unique client_id per process — prevents broker eviction storm when two
+    // gateway instances (e.g. systemd + dev cargo run) connect simultaneously.
+    // MQTT 3.1.1 §3.1.4 requires the broker to disconnect the existing session
+    // on ClientID collision; pid-suffixing makes collision structurally impossible.
+    // call function here ? 
+    let mqtt_client_id = format!("{}-{}", MQTT_CLIENT_ID_PREFIX, std::process::id());
+    let mut mqtt_options = MqttOptions::new(&mqtt_client_id, MQTT_HOST, MQTT_PORT);
     mqtt_options.set_keep_alive(Duration::from_secs(30));
+    mqtt_options.set_last_will(rumqttc::LastWill::new(
+        MQTT_TOPIC_HEALTH,
+        "offline",
+        QoS::AtLeastOnce,
+        true,  // retain
+    ));
 
     // ── MQTT queue channel ────────────────────────────────────────────────────
     let (mqtt_tx, mqtt_rx) = tokio::sync::mpsc::channel::<MqttFrame>(128);
