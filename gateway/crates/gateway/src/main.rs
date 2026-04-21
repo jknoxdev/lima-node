@@ -407,7 +407,6 @@ async fn ntfy_notify(client: reqwest::Client, url: String) {
 }
 
 // ── MQTT task ─────────────────────────────────────────────────────────────────
-
 async fn mqtt_task(
     mut rx:       tokio::sync::mpsc::Receiver<MqttFrame>,
     mqtt_options: MqttOptions,
@@ -419,7 +418,8 @@ async fn mqtt_task(
         let (client, mut eventloop) = AsyncClient::new(mqtt_options.clone(), 64);
         let (dead_tx, mut dead_rx) = tokio::sync::oneshot::channel::<()>();
 
-        tokio::spawn(async move {
+        // Spawn eventloop — keep handle so we can abort on reconnect
+        let el_handle = tokio::spawn(async move {
             loop {
                 match eventloop.poll().await {
                     Ok(_)  => {}
@@ -431,8 +431,10 @@ async fn mqtt_task(
                 }
             }
         });
-        
-        let _ = client.publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online").await;
+
+        let _ = client
+            .publish(MQTT_TOPIC_HEALTH, QoS::AtLeastOnce, true, "online")
+            .await;
         eprintln!("[MQTT] connected to broker {}:{}", MQTT_HOST, MQTT_PORT);
 
         // Drain incoming frames until connection dies
@@ -444,11 +446,19 @@ async fn mqtt_task(
                 }
                 frame = rx.recv() => {
                     match frame {
-                        None => return, // sender dropped
+                        None => {
+                            el_handle.abort();
+                            return; // sender dropped — clean shutdown
+                        }
                         Some(frame) => {
                             match tokio::time::timeout(
                                 PUBLISH_TIMEOUT,
-                                client.publish(&frame.topic, QoS::AtLeastOnce, frame.retain, frame.payload.clone()),
+                                client.publish(
+                                    &frame.topic,
+                                    QoS::AtLeastOnce,
+                                    frame.retain,
+                                    frame.payload.clone(),
+                                ),
                             ).await {
                                 Ok(Ok(_))  => {}
                                 Ok(Err(e)) => {
@@ -466,10 +476,15 @@ async fn mqtt_task(
             }
         }
 
+        // Abort orphaned eventloop before spawning a new one
+        el_handle.abort();
+        let _ = el_handle.await; // reap the task
+
         tokio::time::sleep(RETRY_DELAY).await;
         eprintln!("[MQTT] reconnecting...");
     }
 }
+
 
 // ── Raw HCI helpers ───────────────────────────────────────────────────────────
 

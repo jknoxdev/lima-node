@@ -168,7 +168,9 @@ done
 # ── build session ─────────────────────────────────────────────────────────────
 
 # Create detached session with pane 0 (gateway TUI)
-tmux new-session -d -s "$SESSION" -x "$(tput cols)" -y "$(tput lines)"
+# tmux new-session -d -s "$SESSION" -x "$(tput cols)" -y "$(tput lines)"
+tmux new-session -d -s "$SESSION" -x 220 -y 50
+sleep 1
 
 # Send gateway command to pane 0
 tmux send-keys -t "${SESSION}:0.0" "$CMD_GATEWAY" Enter
@@ -200,7 +202,9 @@ tmux select-pane -t "${SESSION}:0.2" -T "hci1-watchdog"
 tmux select-pane -t "${SESSION}:0.3" -T "rpi-health"
 tmux select-pane -t "${SESSION}:0.4" -T "sqlite"
 
-# ── attach ────────────────────────────────────────────────────────────────────
-
-echo "Session '$SESSION' created — attaching."
-exec byobu attach-session -t "$SESSION" 2>/dev/null || exec tmux attach-session -t "$SESSION"
+# ── attach or detach ──────────────────────────────────────────────────────────
+echo "Session '$SESSION' created."
+if [[ "$1" == "headless" ]]; then
+    exit 0  # ← clean exit, systemd will be happy
+fi
+exec tmux attach-session -t "$SESSION"
