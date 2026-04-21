@@ -20,7 +20,7 @@ extern "C" {
 /* ── Timing constants ────────────────────────────────────────────────────── */
 
 #define ARMED_DWELL_MS          10000   /* ms in ARMED before light sleep eligible */
-#define SLEEP_INACTIVITY_MS     30000   /* ms of no events before deep sleep       */
+#define SLEEP_INACTIVITY_MS     86400000 /* 24h — bumped for first endurance test  */
 #define TX_TIMEOUT_MS           5000    /* ms to wait for BLE TX confirmation      */
 #define MAX_FAULT_RETRIES       3       /* fault recovery attempts before WDT reset */
 
