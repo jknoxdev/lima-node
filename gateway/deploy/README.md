@@ -48,3 +48,20 @@ systemctl --user start lima-monitor.service
 # Make user services survive logout (headless)
 sudo loginctl enable-linger $USER
 ```
+
+## Bluetooth Adapter Isolation
+
+The LIMA gateway requires exclusive access to the Realtek USB BT adapter in our case (`A0:AD:9F:71:13:98`).
+BlueZ must be prevented from managing it, or it will claim the adapter on boot and cause HCI timeouts.
+
+To find the correct MAC: `hciconfig -a | grep -B1 "Bus: USB" | grep "BD Address"`
+
+Add the following to `/etc/bluetooth/main.conf` under the `[Policy]` section:
+
+```ini
+[Policy]
+DenyInterfaces = A0:AD:9F:71:13:98
+```
+
+Without this, paired peripherals (headsets, etc.) can reconnect to the adapter, wedge the HCI stack,
+and silently take down the gateway — with no kernel-level error to indicate why.
