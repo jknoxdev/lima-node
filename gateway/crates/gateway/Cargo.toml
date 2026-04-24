@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 lima-types = { path = "../lima-types" }
-btleplug   = { workspace = true }
 libc       = { workspace = true }
 tokio      = { workspace = true }
 ratatui    = { workspace = true }

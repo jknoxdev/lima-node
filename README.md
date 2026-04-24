@@ -263,7 +263,7 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 - [X] Firmware: CryptoCell-310 ECDSA-P256 signing (— ~107ms, hardware accelerated)
 - [x] Firmware: CryptoCell-310 ECDSA-P256 encryption
 - [X] Firmware: BLE advertisement with signed payload — verified on nRF Connect
-- [X] Gateway: BlueZ BLE scanner + paho MQTT publisher - (btleplug + rumqttc)
+- [X] Gateway: ~~BlueZ BLE~~ raw HCI scanner + ~~paho~~ rumqttc MQTT publisher
 - [X] Gateway: Mosquitto broker + event router 
 - [X] Gateway: SQLite audit log + queue-and-flush egress
 - [X] Gateway: (Pushover) ntfy.sh push notification handler
