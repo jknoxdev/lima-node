@@ -109,14 +109,14 @@ const MQTT_TOPIC_HEALTH: &str = "lima/gateway/health";
 
 
 fn mqtt_topic_frames(node_id: &str) -> String {
-    // sanitize btleplug node_id ("dev_E3_79_63_12_EF_B1") for MQTT topic
+    // sanitize MAC-derived id, no hyphens for MQTT  ("dev_E3_79_63_12_EF_B1") 
     let clean = node_id.replace('/', "-").replace('_', "-");
     format!("lima/nodes/{}/frames", clean)
 }
 
-fn build_mqtt_client_id() -> String {
-    format!("{}-{}", MQTT_CLIENT_ID_PREFIX, std::process::id())
-}
+// fn build_mqtt_client_id() -> String {
+//     format!("{}-{}", MQTT_CLIENT_ID_PREFIX, std::process::id())
+// }
 
 // ── MQTT frame to publish ─────────────────────────────────────────────────────
 
@@ -443,7 +443,7 @@ async fn mqtt_task(
                     // Only back off on repeated errors; first error → reconnect immediately.
                     if consecutive_errs > 1 {
                         let backoff_ms = 250u64.saturating_mul(1 << consecutive_errs.min(6));
-                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                     }
                 }
             }
@@ -622,7 +622,7 @@ fn hci_start_ext_scan(sock: libc::c_int) {
 /// Parse manufacturer specific AD structure from raw AD data bytes.
 ///
 /// Returns (mfr_id, payload) where:
-///   mfr_id  = company ID, u16 LE  (= LF[0] | LF[1]<<8 after btleplug stripping)
+///   mfr_id  = company ID, u16 LE  (= LF[0] | LF[1]<<8, BT Core AD format, type 0xFF) )
 ///   payload = everything after the company ID bytes (= LF[2..184], 182B for LIMA)
 ///
 /// Only the first matching AD type 0xFF entry is returned.

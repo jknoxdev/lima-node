@@ -4,12 +4,13 @@ use aes_gcm::{
 };
 
 // ── LF layout constants (mirrors lima_lf_t) ───────────────────────────────
-// Full wire frame is 184B. btleplug strips proto_version (LF[0]) and
-// event_type (LF[1]) into the mfr_id HashMap key, so the DB blob is 182B.
+// Full wire frame is 184B. gateway stores LF[2..184]; mfr_id carries LF[0..2].
+// strips proto_version (LF[0]) and event_type (LF[1]) into the mfr_id HashMap 
+// key, so the DB blob is 182B.
 // We reconstruct the full 184B before slicing.
 
-const LF_FULL_LEN:       usize = 184;
-const LF_STRIPPED_LEN:   usize = 182; // what btleplug delivers / DB stores
+const LF_FULL_LEN:       usize = 184; // mfr_id carries LF[0..2].
+const LF_STRIPPED_LEN:   usize = 182; // gateway/DB stores LF[2..184]
 const LF_HEADER_LEN:     usize = 4;   // AAD: LF[0..4]
 const LF_NONCE_OFFSET:   usize = 4;   // LF[4..16]
 const LF_NONCE_LEN:      usize = 12;
