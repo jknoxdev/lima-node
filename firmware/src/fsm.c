@@ -345,11 +345,7 @@ static void state_event_detected_enter(void)
 
 /* ── State: SIGNING ──────────────────────────────────────────────────────── */
 
-/*
- * signing_complete_cb — called by lima_crypto_sign_async() with inner_sig result.
- *
- * Assembles lima_lf_t (LIMA Frame) from LER + inner_sig.
- *
+ /*
  * STUB (feat/frame-record-spec): AES-256-GCM encryption not yet applied.
  * ciphertext field = LER || inner_sig in plaintext.
  * nonce and gcm_tag are zeroed.
@@ -361,6 +357,7 @@ static void state_event_detected_enter(void)
  *   2. psa_aead_encrypt(AES-256-GCM, plaintext → ciphertext + gcm_tag)
  *   3. psa_sign_message(ECDSA-P256, LF[0..120] → outer_sig)
  */
+ 
 static void signing_complete_cb(const lima_sig_result_t *result)
 {
     if (result->err != PSA_SUCCESS) {
