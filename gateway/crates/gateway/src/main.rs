@@ -75,12 +75,14 @@ struct HciFilter {
 
 // Current node public key — clock provisioned 2026-04-19
 const TEST_NODE_PUBKEY_HEX: &str = concat!(
-    "04 8d a8 7d 0a 4d df c4  16 c4 01 82 6e d8 ea 0d ",
-    "b2 9e c3 65 13 50 69 69  b8 8c 83 79 de 06 e3 10 ",
-    "3e 42 a3 9e 66 e8 f3 e7  aa 62 d2 aa 24 18 4d 88 ",
-    "e1 1f 2c 7a aa 9d e8 a0  48 84 90 5b 59 ed 48 7f ",
-    "d7"
+    "04 55 26 f4 01 4a 25 f3  1b 02 64 c3 2d 9b 80 03 ",
+    "1e b5 b9 5a 21 d7 ed fe  71 f5 ca 46 69 45 25 0d ",
+    "ac 3c 34 c0 1e b2 c6 0a  41 95 f5 5f 12 a4 dd c6 ",
+    "a2 73 13 35 15 52 88 5b  8b 39 e5 61 83 2d c7 89 ",
+    "c7"                                        
 );
+    
+
 
 const DB_PATH:  &str = "lima_gateway.db";
 const NODE_MAC: &str = "dev_E3_79_63_12_EF_B1";
