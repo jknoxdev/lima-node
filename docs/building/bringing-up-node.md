@@ -40,7 +40,7 @@ west init -l lima-node
 west update
 ```
 
-### 3. Install SDK Requirements
+### 3.a Install SDK Requirements
 Once the modules are downloaded, install the specific toolchain requirements:
 
 ```bash
@@ -51,11 +51,31 @@ pip install -r bootloader/mcuboot/scripts/requirements.txt
 
 > Module folder name (`nrf/` vs `sdk-nrf/`) can vary by NCS version — confirm with `ls` after `west update` if `pip install -r nrf/...` 404s.
 
+### 3.b Install the sdk
+```bash
+west sdk install
+```
+> ⚠️ On macOS you'll see `SKIPPED: macOS host tools are not available yet.` — this is expected, the Zephyr SDK's host tools bundle (QEMU, OpenOCD, etc.) isn't packaged for macOS. The cross-compiler toolchain itself still installs fine. Flashing the DK uses its onboard J-Link, not these host tools — see Step 3.c / `FLASHING.md`.
+
+
+### 3.c Install LIMA-Node tools: 
+```bash
+brew install tio
+```
+
 ### 4. Build & Verify
 Test the toolchain by building the firmware for the nRF52840 DK:
 
 ```bash
-west build -b nrf52840dk/nrf52840 lima-node/firmware
+west build -b nrf52840dk/nrf52840 lima-node/firmware -p always
+```
+> The `-p always` (pristine) flag forces a clean reconfigure. If you hit `ninja: error: loading 'build.ninja': No such file or directory`, it means a previous build attempt failed before CMake finished configuring — this flag fixes it.
+
+Expected output — memory report + successful link:
+```bash
+Memory region    Used Size   Region Size   % Used
+FLASH:           ...
+RAM:             ...
 ```
 
 ---
