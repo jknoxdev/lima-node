@@ -3,7 +3,18 @@
 This project uses a Local Manifest topology. Follow these steps to initialize the workspace and install the necessary dependencies for the nRF52840.
 
 1. Prerequisite: Python Environment
+
 We recommend using a virtual environment to avoid dependency drift.
+
+> macOS Tahoe 26.5.1 ships with Python 3.14 for this build we recommend 3.12:
+
+```bash
+deactivate
+cd ~/lima-ws
+rm -rf .venv
+/opt/homebrew/bin/python3.12 -m venv .venv
+source .venv/bin/activate
+```
 
 
 ### Create and activate a clean environment
