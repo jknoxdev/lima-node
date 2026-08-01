@@ -1,6 +1,7 @@
 @startuml overview
 !pragma layout smetana
 allowmixing
+left to right direction
 
 skinparam {
     BackgroundColor #1a1a2e
@@ -25,14 +26,14 @@ skinparam {
     PackageBackgroundColor #0f1a2e
     PackageFontColor #7EC8E3
     PackageFontSize 13
+    nodesep 18
+    ranksep 34
 }
-
-title <size:18><color:#7EC8E3><b>L.I.M.A. Node -- System Overview</b></color></size>
 
 package "LIMA Node" {
     state "Sensors" as sensors #0D3320
     state "Event Detection" as detect #2a1a0a
-    state "FSM (State Machine)" as fsm #1a3060
+    state "FSM" as fsm #1a3060
     state "Signed Event Record" as packet #2a1a4a
     state "BLE Transport" as ble #0f3460
 }
@@ -40,24 +41,22 @@ package "LIMA Node" {
 state "Gateway" as gw #0a1a3a
 state "MQTT / Storage / Alerts" as backend #1a2a1a
 
-sensors --> detect : sensor IRQ /\nthreshold breach
-detect --> fsm : lima_event_t\nposted to queue
-fsm --> packet : ECDSA-P256\nsign payload
-packet --> ble : advertise\nsigned packet
-ble --> gw : BLE advertisement
-gw --> backend : MQTT publish /\nstore / alert
+sensors --> detect : sensor IRQ
+detect --> fsm : lima_event_t
+fsm --> packet : ECDSA-P256
+packet --> ble : advertise
+ble --> gw : BLE adv
+gw --> backend : publish / store / alert
 
-note right of fsm
-  <color:#27AE60>BOOT -> CALIBRATING
-  -> ARMED -> SLEEP
-  -> EVENT_DETECTED
+note bottom of fsm
+  <color:#27AE60>BOOT -> CALIBRATING -> ARMED
+  -> SLEEP -> EVENT_DETECTED
   -> SIGNING -> TX</color>
 end note
 
-note right of gw
+note top of gw
   <color:#27AE60>Silence = alert
-  gateway detects
-  node dropout</color>
+  gateway detects node dropout</color>
 end note
 
 @enduml
