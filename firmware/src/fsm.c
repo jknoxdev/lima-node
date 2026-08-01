@@ -344,19 +344,6 @@ static void state_event_detected_enter(void)
 }
 
 /* ── State: SIGNING ──────────────────────────────────────────────────────── */
-
- /*
- * STUB (feat/frame-record-spec): AES-256-GCM encryption not yet applied.
- * ciphertext field = LER || inner_sig in plaintext.
- * nonce and gcm_tag are zeroed.
- * outer_sig = inner_sig (placeholder — proper outer sig over LF[0..120] is
- *             implemented in feat/ler-encrypt).
- *
- * TODO(feat/ler-encrypt): replace stub body with:
- *   1. psa_generate_random(nonce, 12)
- *   2. psa_aead_encrypt(AES-256-GCM, plaintext → ciphertext + gcm_tag)
- *   3. psa_sign_message(ECDSA-P256, LF[0..120] → outer_sig)
- */
  
 static void signing_complete_cb(const lima_sig_result_t *result)
 {
