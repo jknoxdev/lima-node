@@ -13,7 +13,7 @@ link gateway to cloud--><path d="M477.61,446.0219 C487.39,473.1719 498.81,504.88
 link push to operator--><path d="M111.15,611.0819 C121.77,629.1619 135.07,651.3619 147.5,670.9219 C153.81,680.8519 160.76,691.3819 167.44,701.3319 " fill="none" id="push-&gt;operator" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="170.29,705.5519,168.5874,695.8513,167.5,701.4027,161.9487,700.3153,170.29,705.5519" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#AAAAAA" font-family="Arial" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="95" x="148.5" y="655.1323">Push Notification</text><text fill="#CCCCCC" font-family="Arial" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="69" x="161.5" y="667.937">[Mobile App]</text><!--MD5=[ba104003c2e3bec16c2d24f5455d9148]
 link siem to operator--><path d="M286.48,610.9219 C275.22,628.9619 261.24,651.1819 248.5,670.9219 C242.44,680.3119 235.89,690.3119 229.59,699.8619 " fill="none" id="siem-&gt;operator" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="226.71,704.2119,235.0096,698.9093,229.467,700.0407,228.3356,694.4981,226.71,704.2119" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#AAAAAA" font-family="Arial" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="100" x="266.5" y="655.1323">Dashboard / Alert</text><text fill="#CCCCCC" font-family="Arial" font-size="11" lengthAdjust="spacingAndGlyphs" textLength="46" x="293.5" y="667.937">[Web UI]</text><!--MD5=[091ffaa374e2f3485c91755a850c6587]
 link node to GMN15--><path d="M557.69,227.0219 C571.34,236.9619 585.34,247.2119 598.5,256.9219 C646.75,292.5419 702.18,334.3619 736.52,360.3819 " fill="none" id="node-GMN15" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[2381c198822714b2fdccb9e516dd1bb1]
-link gateway to GMN18--><path d="M529.83,436.4819 C547.52,447.8119 566.51,459.5719 584.5,469.9219 C634.39,498.6219 693.15,528.1319 734.57,548.2619 " fill="none" id="gateway-GMN18" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[53a96f5644262253c665a3848ebeee18]
+link gateway to GMN18--><path d="M529.83,436.4819 C547.52,447.8119 566.51,459.5719 584.5,469.9219 C634.39,498.6219 693.15,528.1319 734.57,548.2619 " fill="none" id="gateway-GMN18" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[42060455fc39364d8047558636911d61]
 @startuml context
 !pragma layout smetana
 
@@ -84,7 +84,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.18+8
+Java Version: 17.0.19+10
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en

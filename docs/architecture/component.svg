@@ -43,7 +43,7 @@ link queue to siem_h--><path d="M278.88,1703.5819 C253.77,1719.3219 224.98,1737.
 link queue to cloud_h--><path d="M316.48,1703.6419 C317.01,1728.9219 317.85,1769.3619 318.41,1796.5219 " fill="none" id="queue-&gt;cloud_h" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="318.52,1801.7619,322.3387,1792.6835,318.4197,1796.7629,314.3403,1792.8439,318.52,1801.7619" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#7EC8E3" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="83" x="318" y="1749.2041">flush when online</text><!--MD5=[7724e88a9d9d9258ba0270b3c77ac682]
 link ble to scanner--><path d="M302,745.2119 C302,788.4019 302,880.7519 302,927.5219 " fill="none" id="ble-&gt;scanner" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="302,932.7219,306,923.7219,302,927.7219,298,923.7219,302,932.7219" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#FF6B35" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="98" x="306.5" y="811.2041">BLE 5.0 Coded PHY</text><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="105" x="303" y="822.8447">[Encrypted + Signed]</text><!--MD5=[2ed7db3ed98489b13e9ef58b5e0ae962]
 link sqlite to GMN50--><path d="M195.12,1651.4819 C206.97,1629.9419 226.68,1601.7919 253.5,1589.4219 C315.05,1561.0419 494.9,1565.9819 558.5,1589.4219 C591.48,1601.5819 621.16,1629.1419 640.57,1650.5819 " fill="none" id="sqlite-GMN50" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[0df9c1dfb3b58d5b89b7c765e2da8ceb]
-link verifier to GMN53--><path d="M345.83,1541.6519 C363.82,1551.1819 384.74,1563.4719 402,1576.9219 C432.95,1601.0419 463.34,1634.9719 481.63,1656.8319 " fill="none" id="verifier-GMN53" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[8f6608343372ba0cfa58b723034d091c]
+link verifier to GMN53--><path d="M345.83,1541.6519 C363.82,1551.1819 384.74,1563.4719 402,1576.9219 C432.95,1601.0419 463.34,1634.9719 481.63,1656.8319 " fill="none" id="verifier-GMN53" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[d78319e1eaa21282847f3f5d14867cc3]
 @startuml component
 !pragma layout smetana
 
@@ -170,7 +170,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.18+8
+Java Version: 17.0.19+10
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en
