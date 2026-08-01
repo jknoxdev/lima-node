@@ -30,15 +30,15 @@ skinparam {
 package "LIMA Node"{
 
     package "Sensors" {
-        state "Motion" as motion #0D3320
-        state "Barometric" as baro #2a1a0a
-        state "Realtime\nClock" as rtc #2a1a4a
+        state "Motion: MPU6050" as motion #0D3320
+        state "Barometric: BME280" as baro #2a1a0a
+        state "Realtime\nClock: DS3231" as rtc #2a1a4a
     }
 
     package "MCU" {
         state "nRF52840" as mcu #1a3060
     }
-    
+
 }
 
 state "nRF52840" as mcu #1a3060
