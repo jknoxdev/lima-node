@@ -37,8 +37,10 @@ package "LIMA Node" {
     state "BLE\nTransport" as ble #0f3460
 }
 
-state "Gateway" as gw #0a1a3a
-state "MQTT /\nStorage /\nAlerts" as backend #1a2a1a
+package "Infrastructure" {
+    state "Gateway" as gw #0a1a3a
+    state "MQTT /\nStorage /\nAlerts" as backend #1a2a1a
+}
 
 sensors -right-> detect : IRQ
 detect -right-> fsm : lima_event_t
