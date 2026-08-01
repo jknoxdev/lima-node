@@ -1,0 +1,49 @@
+@startuml fsm-simple
+!pragma layout smetana
+
+skinparam {
+    BackgroundColor #1a1a2e
+    ArrowColor #7EC8E3
+    ArrowFontColor #CCCCCC
+    ArrowFontSize 13
+    DefaultFontName Arial
+    DefaultFontColor #E0E0E0
+    DefaultFontSize 14
+    StateBorderColor #4A90D9
+    StateBorderThickness 2
+    StateBackgroundColor #0f3460
+    StateFontColor #FFFFFF
+    StateFontSize 16
+    NoteBackgroundColor #0D2818
+    NoteBorderColor #27AE60
+    NoteFontColor #27AE60
+    NoteFontSize 13
+    nodesep 36
+    ranksep 38
+}
+
+state "BOOT" as boot #1a3060
+state "CALIBRATING" as cal #2a1a0a
+state "ARMED" as armed #0D3320
+state "SLEEP" as sleep #0a1a3a
+state "EVENT\nDETECTED" as evt #2a1a4a
+state "SIGN" as sign #3a1a2a
+state "ENCRYPT" as enc #3a1a2a
+state "TX" as tx #0f3460
+
+[*] -right-> boot
+boot -right-> cal : self-test\npass
+cal -right-> armed : baseline\nestablished
+armed -right-> sleep : idle
+sleep -right-> evt : sensor IRQ
+evt -right-> enc
+enc -right-> sign
+sign -left-> tx
+tx -up-> armed : re-arm
+
+note bottom of cal
+  Baseline is captured once.
+  Drift after this point is signal.
+end note
+
+@enduml
