@@ -92,6 +92,27 @@ Each fires independently. An attacker must defeat both sensors simultaneously to
 
 ## Hardware
 
+## Supported Boards
+
+| Board | Target | Status |
+|---|---|---|
+| Nordic nRF52840-DK (PCA10056) | `nrf52840dk/nrf52840` | **Supported** |
+| Seeed XIAO nRF52840 Sense | — | Planned — [#46](https://github.com/jknoxdev/lima-node/issues/46) |
+| nRF52840 MDK USB Dongle | `nrf52840_mdk_usb_dongle` | Dropped |
+
+The MDK USB dongle was the original bring-up target and carried the project
+through early sensor and BLE work. It was dropped once the security model
+firmed up: the dongle has no DS3231, so there is no battery-backed epoch and no
+tamper-epoch anchor across power loss, and its UF2 bootloader leaves no room for
+the `storage` flash partition that persistent PSA key storage requires
+(see [ADR-006](docs/architecture/adr/ADR-006-persistent-key-storage.md)). A node
+that regenerates its identity on every power cycle and can't trustworthily
+timestamp an event isn't a degraded LIMA node — it's a different thing wearing
+the name.
+
+The overlay is retained in `firmware/boards/` for reference and is not built
+or tested.
+
 | Component   | Part                          | Role                          |
 | -------------| -------------------------------| -------------------------------|
 | Edge Node   | Nordic nRF52840-DK (PCA10056) | Sensor + crypto + BLE         |
@@ -277,6 +298,8 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 - [ ] Docs: Deployment guide
 
 ---
+
+
 
 ## Security
 Found a vulnerability? Please review our [Security Policy](SECURITY.md) before opening an issue.
