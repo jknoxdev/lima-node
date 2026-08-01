@@ -1,0 +1,50 @@
+@startuml node
+
+allowmixing
+
+skinparam {
+    BackgroundColor #1a1a2e
+    ArrowColor #7EC8E3
+    ArrowFontColor #CCCCCC
+    ArrowFontSize 13
+    DefaultFontName Arial
+    DefaultFontColor #E0E0E0
+    DefaultFontSize 14
+    StateBorderColor #4A90D9
+    StateBorderThickness 2
+    StateBackgroundColor #0f3460
+    StateFontColor #FFFFFF
+    StateFontSize 16
+    NoteBackgroundColor #0D2818
+    NoteBorderColor #27AE60
+    NoteFontColor #27AE60
+    NoteFontSize 13
+    PackageBorderColor #4A90D9
+    PackageBackgroundColor #0f1a2e
+    PackageFontColor #7EC8E3
+    PackageFontSize 15
+    nodesep 36
+    ranksep 40
+}
+
+package "LIMA Node"{
+
+    package "Sensors" {
+        state "Motion" as motion #0D3320
+        state "Barometric" as baro #2a1a0a
+        state "Realtime\nClock" as rtc #2a1a4a
+    }
+
+    package "MCU" {
+        state "nRF52840" as mcu #1a3060
+    }
+    
+}
+
+state "nRF52840" as mcu #1a3060
+
+motion -up-> mcu
+baro -up-> mcu
+rtc -up-> mcu
+
+@enduml

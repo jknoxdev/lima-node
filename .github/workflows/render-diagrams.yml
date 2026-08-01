@@ -4,7 +4,12 @@ on:
   push:
     paths:
       - '**.puml'
+      - '.github/workflows/plantuml.yml'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   render:
@@ -12,29 +17,42 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      PLANTUML_VERSION: "1.2026.0"
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
-          fetch-depth: 0
+          distribution: temurin
+          java-version: '17'
 
-      - name: Install PlantUML
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y plantuml
+      - name: Install Graphviz
+        run: sudo apt-get update -q && sudo apt-get install -y graphviz
 
-      - name: Render SVG and PNG
+      - name: Fetch PlantUML jar
         run: |
-          find . -name "*.puml" | while read f; do
-            echo "Rendering $f"
-            plantuml -tsvg "$f"
-            plantuml -tpng "$f"
-          done
+          curl -fsSL -o plantuml.jar \
+            "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar"
+          java -jar plantuml.jar -version
+
+      - name: Render svg
+        run: |
+          find . -name '*.puml' -not -path './.git/*' -print0 \
+            | xargs -0 -r java -jar plantuml.jar -tsvg -nometadata -failfast2
+
+      - name: Render png
+        run: |
+          find . -name '*.puml' -not -path './.git/*' -print0 \
+            | xargs -0 -r java -jar plantuml.jar -tpng -nometadata -failfast2
 
       - name: Commit rendered diagrams
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "ci: auto-render PlantUML diagrams [skip ci]"
+          commit_message: "ci: auto-render PlantUML diagrams"
           file_pattern: "**/*.svg **/*.png"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
