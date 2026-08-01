@@ -66,14 +66,14 @@ MQTT with a local Mosquitto broker is the internal event bus for the LIMA gatewa
 
 MQTT is the natural fit for LIMA's gateway architecture:
 
-| Requirement | MQTT | CoAP | Raw TCP | HTTP |
-|---|---|---|---|---|
-| Pub/sub fan-out | ✅ native | ⚠️ | ❌ custom | ❌ |
-| Topic filtering | ✅ `lima/#` | ❌ | ❌ | ❌ |
-| RPi Zero footprint | ✅ Mosquitto ~3MB | ✅ | ✅ | ✅ |
-| SIEM compatibility | ✅ native | ⚠️ | ❌ | ✅ |
-| QoS / persistence | ✅ | ⚠️ | ❌ | ❌ |
-| Local only capable | ✅ | ✅ | ✅ | ✅ |
+| Requirement        | MQTT             | CoAP | Raw TCP  | HTTP |
+| --------------------| ------------------| ------| ----------| ------|
+| Pub/sub fan-out    | ✅ native         | ⚠️    | ❌ custom | ❌    |
+| Topic filtering    | ✅ `lima/#`       | ❌    | ❌        | ❌    |
+| RPi Zero footprint | ✅ Mosquitto ~3MB | ✅    | ✅        | ✅    |
+| SIEM compatibility | ✅ native         | ⚠️    | ❌        | ✅    |
+| QoS / persistence  | ✅                | ⚠️    | ❌        | ❌    |
+| Local only capable | ✅                | ✅    | ✅        | ✅    |
 
 **Topic structure** enables clean multi-node scaling without code changes:
 ```

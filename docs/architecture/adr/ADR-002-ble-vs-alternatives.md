@@ -67,14 +67,14 @@ BLE 5.0 Coded PHY is the primary air interface for LIMA v1.0 node-to-gateway com
 
 BLE 5.0 Coded PHY satisfies all requirements without gateway infrastructure complexity:
 
-| Requirement | BLE 5.0 Coded | Thread | LoRa | WiFi |
-|---|---|---|---|---|
-| Range > 50m indoors | ✅ ~100m | ✅ mesh | ✅ km | ⚠️ |
-| Battery life > 1yr | ✅ | ✅ | ✅ | ❌ |
-| No extra infrastructure | ✅ | ❌ Border Router | ❌ GW | ❌ AP |
-| nRF52840 native | ✅ | ✅ | ❌ | ❌ |
-| Signed payload support | ✅ | ✅ | ⚠️ size | ✅ |
-| Zephyr first-class | ✅ | ✅ | ⚠️ | ⚠️ |
+| Requirement             | BLE 5.0 Coded | Thread          | LoRa   | WiFi |
+| -------------------------| ---------------| -----------------| --------| ------|
+| Range > 50m indoors     | ✅ ~100m       | ✅ mesh          | ✅ km   | ⚠️    |
+| Battery life > 1yr      | ✅             | ✅               | ✅      | ❌    |
+| No extra infrastructure | ✅             | ❌ Border Router | ❌ GW   | ❌ AP |
+| nRF52840 native         | ✅             | ✅               | ❌      | ❌    |
+| Signed payload support  | ✅             | ✅               | ⚠️ size | ✅    |
+| Zephyr first-class      | ✅             | ✅               | ⚠️      | ⚠️    |
 
 **Coded PHY specifically** — BLE 5.0 Coded PHY uses forward error correction to double effective range vs BLE 4.2 at identical transmit power. This is critical for metal enclosure deployments where RF attenuation is significant.
 

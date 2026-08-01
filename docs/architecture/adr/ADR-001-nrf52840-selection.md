@@ -56,14 +56,14 @@ The nRF52840 is the primary edge node MCU for LIMA v1.0.
 
 The nRF52840 uniquely satisfies all requirements simultaneously:
 
-| Requirement | nRF52840 | ESP32 | STM32 |
-|---|---|---|---|
-| HW crypto (ECDSA) | ✅ CryptoCell-310 | ❌ | ❌ |
-| BLE 5.0 Coded PHY | ✅ | ❌ | ❌ |
-| Zephyr RTOS support | ✅ First-class | ⚠️ | ✅ |
-| Deep sleep < 2µA | ✅ | ❌ | ✅ |
-| Integrated radio | ✅ | ✅ | ❌ |
-| NCS / West toolchain | ✅ | ❌ | ❌ |
+| Requirement          | nRF52840         | ESP32 | STM32 |
+| ----------------------| ------------------| -------| -------|
+| HW crypto (ECDSA)    | ✅ CryptoCell-310 | ❌     | ❌     |
+| BLE 5.0 Coded PHY    | ✅                | ❌     | ❌     |
+| Zephyr RTOS support  | ✅ First-class    | ⚠️     | ✅     |
+| Deep sleep < 2µA     | ✅                | ❌     | ✅     |
+| Integrated radio     | ✅                | ✅     | ❌     |
+| NCS / West toolchain | ✅                | ❌     | ❌     |
 
 The **CryptoCell-310** hardware accelerator is the decisive factor — it enables ECDSA-P256 signing in ~50ms at minimal power cost. Software signing on ESP32 takes 10-20x longer and drains battery significantly faster.
 

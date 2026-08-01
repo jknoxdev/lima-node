@@ -69,15 +69,15 @@ Zephyr RTOS via the Nordic Connect SDK is the firmware operating system for LIMA
 
 Zephyr + NCS is the only stack that provides all required capabilities as first-class features:
 
-| Requirement | Zephyr/NCS | Bare Metal | FreeRTOS | Arduino |
-|---|---|---|---|---|
-| CryptoCell-310 integration | ✅ native | ❌ manual | ⚠️ | ❌ |
-| BLE 5.0 Coded PHY | ✅ native | ❌ | ⚠️ glue | ⚠️ |
-| Preemptive scheduling | ✅ | ❌ | ✅ | ❌ |
-| Power management APIs | ✅ | ❌ manual | ⚠️ | ❌ |
-| Device tree config | ✅ | ❌ | ❌ | ❌ |
-| West build system | ✅ | ❌ | ❌ | ❌ |
-| Linux Foundation backed | ✅ | N/A | ❌ | ❌ |
+| Requirement                | Zephyr/NCS | Bare Metal | FreeRTOS | Arduino |
+| ----------------------------| ------------| ------------| ----------| ---------|
+| CryptoCell-310 integration | ✅ native   | ❌ manual   | ⚠️        | ❌       |
+| BLE 5.0 Coded PHY          | ✅ native   | ❌          | ⚠️ glue   | ⚠️       |
+| Preemptive scheduling      | ✅          | ❌          | ✅        | ❌       |
+| Power management APIs      | ✅          | ❌ manual   | ⚠️        | ❌       |
+| Device tree config         | ✅          | ❌          | ❌        | ❌       |
+| West build system          | ✅          | ❌          | ❌        | ❌       |
+| Linux Foundation backed    | ✅          | N/A        | ❌        | ❌       |
 
 **NCS specifically** — Nordic Connect SDK wraps Zephyr with production-tested nRF52840 board support, CryptoCell-310 mbedTLS integration, and a tested BLE stack. This is what Nordic ships in commercial products — the quality bar is production-grade.
 
