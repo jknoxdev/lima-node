@@ -38,7 +38,7 @@ package "LIMA Node"{
     package "MCU" {
         state "nRF52840" as mcu #1a3060
     }
-
+    
 }
 
 state "nRF52840" as mcu #1a3060
