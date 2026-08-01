@@ -1,4 +1,4 @@
-@startuml overview
+@startuml overview-h
 !pragma layout smetana
 allowmixing
 
