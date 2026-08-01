@@ -24,7 +24,7 @@ link LIGHT_SLEEP to LOW_BATTERY--><path d="M778.22,301.0319 C773.57,347.1219 772
 link DEEP_SLEEP to LOW_BATTERY--><path d="M997.74,478.1319 C1002.2,504.1519 1007.81,536.9119 1012.4,563.7319 " fill="none" id="DEEP_SLEEP-&gt;LOW_BATTERY" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="1013.25,568.6619,1015.6757,559.1164,1012.4072,563.7334,1007.7901,560.4649,1013.25,568.6619" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="82" x="1008" y="524.2041">Vbat &lt; threshold</text><!--MD5=[671009e678a3ff9e6bb500160f705e5f]
 link LOW_BATTERY to *end--><path d="M1032.23,660.9719 C1049.84,743.2919 1073.46,918.9319 985,1020.9219 C904.16,1114.1219 483.78,1153.9319 397.49,1161.1819 " fill="none" id="LOW_BATTERY-&gt;*end" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="392.3,1161.6119,401.5911,1164.8793,397.284,1161.212,400.9513,1156.9049,392.3,1161.6119" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="56" x="1046" y="884.2041">Vbat critical</text><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="55" x="1046.5" y="895.8447">[shutdown]</text><!--MD5=[1b109b12a12fa817ee54ba830baa167a]
 link FAULT to *end--><path d="M231.01,1013.9119 C250.24,1024.6219 270.07,1037.1419 287,1050.9219 C324.57,1081.4919 358.82,1128.2919 373.89,1150.2519 " fill="none" id="FAULT-&gt;*end" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="376.81,1154.5419,375.0459,1144.8523,373.9938,1150.4104,368.4356,1149.3583,376.81,1154.5419" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="69" x="322" y="1061.2041">unrecoverable</text><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="83" x="315" y="1072.8447">[watchdog reset]</text><!--MD5=[bf03b80055aa65fbda3737bf1fa02f87]
-link COOLDOWN to GMN49--><path d="M544.43,928.7219 C563.6,912.0119 587.37,895.1219 612.5,886.4219 C679.7,863.1619 705.15,863.5919 772.5,886.4219 C807.19,898.1819 839.64,925.0119 861.25,946.0719 " fill="none" id="COOLDOWN-GMN49" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[5a8a285556f0b7d4cf260a640adb75da]
+link COOLDOWN to GMN49--><path d="M544.43,928.7219 C563.6,912.0119 587.37,895.1219 612.5,886.4219 C679.7,863.1619 705.15,863.5919 772.5,886.4219 C807.19,898.1819 839.64,925.0119 861.25,946.0719 " fill="none" id="COOLDOWN-GMN49" style="stroke: #7EC8E3; stroke-width: 1.0; stroke-dasharray: 7.0,7.0;"/><!--MD5=[6ff57c02e11fc7859ac7cfd21fb91627]
 @startuml state
 !pragma layout smetana
 
@@ -196,7 +196,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.18+8
+Java Version: 17.0.19+10
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en

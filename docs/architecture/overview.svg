@@ -5,7 +5,7 @@ link detect to fsm--><path d="M107.06,264.0431 C108.08,287.1931 109.62,322.2231 
 link fsm to packet--><path d="M112.18,402.5431 C112.35,425.6931 112.6,460.7231 112.78,485.5231 " fill="none" id="fsm-&gt;packet" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="112.82,490.6431,116.7427,481.6092,112.7771,485.6433,108.743,481.6777,112.82,490.6431" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="66" x="113" y="446.2354">ECDSA-P256</text><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="60" x="116" y="457.876">sign payload</text><!--MD5=[c94fab87350a3419dc3459b978200fe2]
 link packet to ble--><path d="M113,541.0431 C113,563.3131 113,596.4731 113,620.3431 " fill="none" id="packet-&gt;ble" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="113,625.5931,117,616.5931,113,620.5931,109,616.5931,113,625.5931" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="45" x="124.5" y="581.2354">advertise</text><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="66" x="114" y="592.876">signed packet</text><!--MD5=[ca2ba856fbd59c09273a1f064e76d17a]
 link ble to gw--><path d="M113,675.9631 C113,695.8131 113,724.0931 113,745.3431 " fill="none" id="ble-&gt;gw" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="113,750.5831,117,741.5831,113,745.5831,109,741.5831,113,750.5831" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="94" x="114" y="718.2354">BLE advertisement</text><!--MD5=[56aadb34960afad9c27f2cd752a6a214]
-link gw to backend--><path d="M113,801.0431 C113,823.3131 113,856.4731 113,880.3431 " fill="none" id="gw-&gt;backend" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="113,885.5931,117,876.5931,113,880.5931,109,876.5931,113,885.5931" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="69" x="114" y="841.2354">MQTT publish /</text><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="56" x="120.5" y="852.876">store / alert</text><!--MD5=[9f6bf24da376b678e9576eb7290b5fd7]
+link gw to backend--><path d="M113,801.0431 C113,823.3131 113,856.4731 113,880.3431 " fill="none" id="gw-&gt;backend" style="stroke: #7EC8E3; stroke-width: 1.0;"/><polygon fill="#7EC8E3" points="113,885.5931,117,876.5931,113,880.5931,109,876.5931,113,885.5931" style="stroke: #7EC8E3; stroke-width: 1.0;"/><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="69" x="114" y="841.2354">MQTT publish /</text><text fill="#CCCCCC" font-family="Arial" font-size="10" lengthAdjust="spacingAndGlyphs" textLength="56" x="120.5" y="852.876">store / alert</text><!--MD5=[a7ffcf914c1c8e3553e83eb4d8a1ee3a]
 @startuml overview
 !pragma layout smetana
 allowmixing
@@ -74,7 +74,7 @@ PlantUML version 1.2020.02(Sun Mar 01 10:22:07 UTC 2020)
 (GPL source distribution)
 Java Runtime: OpenJDK Runtime Environment
 JVM: OpenJDK 64-Bit Server VM
-Java Version: 17.0.18+8
+Java Version: 17.0.19+10
 Operating System: Linux
 Default Encoding: UTF-8
 Language: en
