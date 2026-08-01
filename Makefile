@@ -8,8 +8,12 @@ export PATH := $(CURDIR)/$(VENV)/bin:$(PATH)
 
 .PHONY: build flash menuconfig clean init
 
+PORT := $(shell ls /dev/cu.usbmodem* 2>/dev/null | head -1)
+
+
 init:
 	python3 -m venv $(VENV)
+	$(PYTHON) -m pip install "cmake==3.31.6"
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install west
 	$(PYTHON) -m pip install -r zephyr/scripts/requirements.txt
@@ -27,11 +31,11 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 monitor:
-	tio -l --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log /dev/ttyACM0
+	tio --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log $(PORT)
 
 flash-monitor:
 	$(WEST) flash --runner jlink --build-dir $(BUILD_DIR)
-	tio -l --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log /dev/ttyACM0
+	tio --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log $(PORT)
 
 archive-logs:
 	@if ls lima-node/docs/logs/*.log 2>/dev/null; then \
@@ -45,7 +49,7 @@ provision:
 		-- -DCONFIG_LIMA_PROVISION_UNIX_TIME=$(shell date +%s) \
 		-DCONFIG_LIMA_FORCE_PROVISION=y
 	$(WEST) flash --runner jlink --build-dir $(BUILD_DIR)
-	tio -l --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log /dev/ttyACM0
+	tio --log-file lima-node/docs/logs/debug-$(shell date +%Y%m%d-%H%M%S).log $(PORT)
 
 archive:
 	tar -czf ../arcv/lima-node.$(shell date +%Y.%V.%u).tar.gz \
