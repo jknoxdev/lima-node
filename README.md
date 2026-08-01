@@ -57,6 +57,9 @@ Security goals:
 
 Current phase: hardware power management + KiCad schematic
 
+Released: **v0.1.0** — see [CHANGELOG.md](CHANGELOG.md) for what's included and
+what isn't.
+
 ---
 ## Architecture
 
@@ -219,6 +222,7 @@ lima-node/
 │       ├── lima-ler-lf-spec.md        # LER/LF spec (dev reference)
 │       └── quickref.md                # Build + flash quick reference
 │
+├── CHANGELOG.md                       # Release history (Keep a Changelog)
 ├── CONTRIBUTING.md                    # How to contribute + graduation terminology 🎓
 ├── SECURITY.md                        # Vulnerability disclosure policy
 ├── COMMERCIAL_LICENSE.md             # Commercial licensing terms
@@ -261,7 +265,7 @@ Major technical decisions are documented in [`docs/architecture/adr/`](docs/arch
 - [X] Firmware: IMU + barometric sensor drivers (Zephyr I2C)
 - [X] Firmware: Event aggregator with independent OR trigger logic
 - [X] Firmware: CryptoCell-310 ECDSA-P256 signing (— ~107ms, hardware accelerated)
-- [x] Firmware: CryptoCell-310 ECDSA-P256 encryption
+- [x] Firmware: CryptoCell-310 AES-256-GCM encryption
 - [X] Firmware: BLE advertisement with signed payload — verified on nRF Connect
 - [X] Gateway: ~~BlueZ BLE~~ raw HCI scanner + ~~paho~~ rumqttc MQTT publisher
 - [X] Gateway: Mosquitto broker + event router 
