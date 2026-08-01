@@ -39,10 +39,15 @@ jobs:
             "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar"
           java -jar plantuml.jar -version
 
-      - name: Render diagrams
+      - name: Render svg
         run: |
           find . -name '*.puml' -not -path './.git/*' -print0 \
-            | xargs -0 -r java -jar plantuml.jar -tsvg -tpng -nometadata -failfast2
+            | xargs -0 -r java -jar plantuml.jar -tsvg -nometadata -failfast2
+
+      - name: Render png
+        run: |
+          find . -name '*.puml' -not -path './.git/*' -print0 \
+            | xargs -0 -r java -jar plantuml.jar -tpng -nometadata -failfast2
 
       - name: Commit rendered diagrams
         uses: stefanzweifel/git-auto-commit-action@v5
