@@ -1,62 +1,61 @@
 @startuml overview
 !pragma layout smetana
 allowmixing
-left to right direction
 
 skinparam {
     BackgroundColor #1a1a2e
     ArrowColor #7EC8E3
     ArrowFontColor #CCCCCC
-    ArrowFontSize 10
+    ArrowFontSize 13
     DefaultFontName Arial
     DefaultFontColor #E0E0E0
-    DefaultFontSize 11
+    DefaultFontSize 14
     StateBorderColor #4A90D9
     StateBorderThickness 2
     StateBackgroundColor #0f3460
     StateFontColor #FFFFFF
-    StateFontSize 12
+    StateFontSize 16
     StateAttributeFontColor #AAAAAA
-    StateAttributeFontSize 10
+    StateAttributeFontSize 12
     NoteBackgroundColor #0D2818
     NoteBorderColor #27AE60
-    NoteFontColor #AAAAAA
-    NoteFontSize 10
+    NoteFontColor #27AE60
+    NoteFontSize 13
     PackageBorderColor #4A90D9
     PackageBackgroundColor #0f1a2e
     PackageFontColor #7EC8E3
-    PackageFontSize 13
-    nodesep 18
-    ranksep 34
+    PackageFontSize 15
+    nodesep 20
+    ranksep 40
 }
 
 package "LIMA Node" {
     state "Sensors" as sensors #0D3320
-    state "Event Detection" as detect #2a1a0a
+    state "Event\nDetection" as detect #2a1a0a
     state "FSM" as fsm #1a3060
-    state "Signed Event Record" as packet #2a1a4a
-    state "BLE Transport" as ble #0f3460
+    state "Signed\nEvent\nRecord" as packet #2a1a4a
+    state "BLE\nTransport" as ble #0f3460
 }
 
 state "Gateway" as gw #0a1a3a
-state "MQTT / Storage / Alerts" as backend #1a2a1a
+state "MQTT /\nStorage /\nAlerts" as backend #1a2a1a
 
-sensors --> detect : sensor IRQ
-detect --> fsm : lima_event_t
-fsm --> packet : ECDSA-P256
-packet --> ble : advertise
-ble --> gw : BLE adv
-gw --> backend : publish / store / alert
+sensors -right-> detect : IRQ
+detect -right-> fsm : lima_event_t
+fsm -right-> packet : ECDSA-P256
+packet -right-> ble : advertise
+ble -right-> gw : BLE adv
+gw -right-> backend : publish
 
-note bottom of fsm
-  <color:#27AE60>BOOT -> CALIBRATING -> ARMED
+note top of fsm
+  BOOT -> CALIBRATING -> ARMED
   -> SLEEP -> EVENT_DETECTED
-  -> SIGNING -> TX</color>
+  -> SIGNING -> TX
 end note
 
-note top of gw
-  <color:#27AE60>Silence = alert
-  gateway detects node dropout</color>
+note bottom of gw
+  Silence = alert
+  gateway detects node dropout
 end note
 
 @enduml
