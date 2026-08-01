@@ -30,6 +30,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Install Graphviz
+        run: sudo apt-get update -q && sudo apt-get install -y graphviz
+
       - name: Fetch PlantUML jar
         run: |
           curl -fsSL -o plantuml.jar \
