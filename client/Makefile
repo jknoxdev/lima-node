@@ -8,7 +8,7 @@ BIN     := ./target/release/client
 DEBUG   := ./target/debug/client
 DB      ?= $(HOME)/lima-node/gateway/crates/gateway/lima_gateway.db
 
-.PHONY: build release run live check test clean db-check gw-check
+.PHONY: build release run live dev check test clean db-check gw-check
 
 release:
 	cargo build --release
@@ -17,7 +17,7 @@ build:
 	cargo build
 
 # Replay all verified frames from rowid 0 (default demo mode)
-run: release db-check
+run: release db-check gw-check
 	LIMA_DB=$(DB) $(BIN)
 
 # Start from current max rowid — only frames arriving after launch
