@@ -20,8 +20,7 @@
 # Config — adjust these paths if layout changes
 SESSION="lima"
 GATEWAY_DIR="${HOME}/lima-node/gateway"
-GATEWAY_BIN="${GATEWAY_DIR}/target/release/gateway"
-LIMA_DB="${GATEWAY_DIR}/lima.db"
+LIMA_DB="${GATEWAY_DIR}/crates/gateway/lima_gateway.db"
 HCI_IFACE="hci1"
 MQTT_LOG="/var/log/mosquitto/mosquitto.log"
 
@@ -47,11 +46,11 @@ fi
 
 # ── pane command strings ──────────────────────────────────────────────────────
 
-# [0] Gateway TUI — run directly; falls back to a wait loop if binary missing
+# [0] Gateway — now run client directly
+# CMD_GATEWAY block
 CMD_GATEWAY="
-echo '[lima] tailing gateway service log'
-echo '─────────────────────────────────────────'
-journalctl -u lima-gateway -f --no-pager -n 50
+cd ${HOME}/lima-node/client
+exec make run
 "
 
 
